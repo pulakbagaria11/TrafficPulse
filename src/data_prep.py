@@ -75,10 +75,14 @@ def load_data(path=None):
     if lon_col and lon_col != 'longitude':
         df = df.rename(columns={lon_col: 'longitude'})
 
+    # The Astram system stores IST timestamps but labels them +00 (common Indian govt system bug).
+    # Stripping the offset and parsing as naive gives correct IST hours.
     for col in ['start_datetime', 'end_datetime', 'closed_datetime']:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], utc=True, errors='coerce')
-            df[col] = df[col].dt.tz_convert('Asia/Kolkata')
+            stripped = df[col].astype(str).str.replace(
+                r'\+\d{2}(:\d{2})?$', '', regex=True
+            ).str.replace(r'\s*UTC$', '', regex=True)
+            df[col] = pd.to_datetime(stripped, errors='coerce')
 
     if 'event_cause' in df.columns:
         df = df[df['event_cause'].astype(str).str.lower() != 'test_demo']

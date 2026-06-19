@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data_prep import load_data, cause_label, BENGALURU_CENTER
 from src.severity_model import train_models, predict_event
 from src.recommender import get_recommendation
-from src.diversion import get_route
+from src.diversion import get_route, get_corridor_alternates
+from src.mappls_map import make_route_map_html
 
 st.set_page_config(page_title="Prediction | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -159,17 +160,43 @@ if run:
     # --- Diversion ---
     if rec.get('diversion'):
         st.markdown("---")
-        st.subheader("Alternate Routes (Mappls)")
-        with st.spinner("Fetching routes..."):
-            routes, err = get_route(lat - 0.01, lon - 0.01, lat + 0.01, lon + 0.01)
-        if routes:
-            for i, r in enumerate(routes):
-                st.markdown(
-                    f"**Route {i+1}:** {r.get('summary', 'Alternate')} — "
-                    f"{r.get('distance_km', '?')} km, ~{r.get('duration_min', '?')} min"
+        st.subheader("Alternate Routes")
+        rc1, rc2 = st.columns([2, 1])
+
+        with rc1:
+            with st.spinner("Fetching routes from Mappls..."):
+                routes, err = get_route(lat - 0.03, lon - 0.03, lat + 0.03, lon + 0.03)
+
+            if routes:
+                for i, r in enumerate(routes):
+                    st.markdown(
+                        f"**Route {i+1}:** {r.get('summary', 'Alternate')} — "
+                        f"{r.get('distance_km', '?')} km, ~{r.get('duration_min', '?')} min"
+                    )
+                # Show Mappls route map
+                route_html, map_err = make_route_map_html(
+                    lat - 0.03, lon - 0.03, lat + 0.03, lon + 0.03, height=300
                 )
-        else:
-            st.info(f"Route API: {err}")
+                if route_html:
+                    st.components.v1.html(route_html, height=310)
+            else:
+                st.caption(f"Mappls routing: {err}")
+
+        with rc2:
+            # Corridor-based fallback always shown
+            corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
+            top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
+            alts = get_corridor_alternates(top_corridor or '')
+
+            st.markdown("**Suggested alternate corridors**")
+            st.caption(f"Historically used when {cause_label(event_cause)} is reported on this route.")
+            if alts:
+                for a in alts:
+                    st.markdown(f"- {a}")
+            else:
+                st.markdown("- Outer Ring Road\n- NICE Road corridor")
+            if top_corridor:
+                st.caption(f"Based on: {top_corridor}")
 
     # --- Feature importance ---
     st.markdown("---")
