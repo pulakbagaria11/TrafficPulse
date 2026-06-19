@@ -182,15 +182,17 @@ ps_rows = [
      "event_type field throughout, with Planned Event Mode specifically for the planned side (rallies, festivals, sports, construction)."),
 ]
 
-ps_table_html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
-for req, answer in ps_rows:
-    ps_table_html += f"""
-    <tr style="border-bottom:1px solid #e0e0e0;">
-        <td style="padding:8px 10px;width:32%;vertical-align:top;color:#1a3a5c;font-weight:600;">{req}</td>
-        <td style="padding:8px 10px;vertical-align:top;color:#444;">{answer}</td>
-    </tr>
-    """
-ps_table_html += "</table>"
+row_html = "".join(
+    f'<tr style="border-bottom:1px solid #e0e0e0;">'
+    f'<td style="padding:8px 10px;width:32%;vertical-align:top;color:#1a3a5c;font-weight:600;">{req}</td>'
+    f'<td style="padding:8px 10px;vertical-align:top;color:#444;">{answer}</td>'
+    f'</tr>'
+    for req, answer in ps_rows
+)
+ps_table_html = (
+    '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+    + row_html + "</table>"
+)
 st.markdown(ps_table_html, unsafe_allow_html=True)
 
 st.markdown("---")

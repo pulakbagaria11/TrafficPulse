@@ -48,12 +48,12 @@ if df is not None and 'event_cause' in df.columns:
         corridor = str(vip.get('corridor', 'City corridor')).strip()
         if corridor and corridor not in ('nan', ''):
             st.markdown(
-                f"""<div style="background:#7f1d1d;color:white;padding:0.7rem 1rem;
-                border-radius:5px;margin-bottom:1rem;font-size:0.9rem;">
-                <b>Historical Example — VIP Movement</b> &nbsp;|&nbsp;
-                Corridor: {corridor} &nbsp;|&nbsp; Road closure required.
-                Plan alternate routes.
-                </div>""",
+                f'<div style="background:#7f1d1d;color:white;padding:0.7rem 1rem;'
+                f'border-radius:5px;margin-bottom:1rem;font-size:0.9rem;">'
+                f'<b>Historical Example — VIP Movement</b> &nbsp;|&nbsp; '
+                f'Corridor: {corridor} &nbsp;|&nbsp; Road closure required. '
+                f'Plan alternate routes.'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
@@ -279,17 +279,17 @@ with tab_police:
                 desc_text = row.get('description', '') or ''
                 verified_badge = " &nbsp;<b style='color:#27ae60;'>Verified</b>" if row.get('verified') else ""
 
+                desc_suffix = f" — {desc_text[:60]}" if desc_text else ""
                 st.markdown(
-                    f"""<div style="border-left:4px solid {status_color};
-                    padding:0.5rem 0.8rem;margin-bottom:0.5rem;background:#f9f9f9;border-radius:3px;">
-                    <b>{cause_text}</b> &nbsp;
-                    <span style="background:{status_color};color:white;padding:1px 6px;
-                    border-radius:3px;font-size:0.75rem;">{status.title()}</span>{verified_badge}<br>
-                    <span style="font-size:0.8rem;color:#555;">
-                    {row['reporter_id']} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}
-                    {(' — ' + desc_text[:60]) if desc_text else ''}
-                    </span>
-                    </div>""",
+                    f'<div style="border-left:4px solid {status_color};'
+                    f'padding:0.5rem 0.8rem;margin-bottom:0.5rem;background:#f9f9f9;border-radius:3px;">'
+                    f'<b>{cause_text}</b> &nbsp;'
+                    f'<span style="background:{status_color};color:white;padding:1px 6px;'
+                    f'border-radius:3px;font-size:0.75rem;">{status.title()}</span>{verified_badge}<br>'
+                    f'<span style="font-size:0.8rem;color:#555;">'
+                    f"{row['reporter_id']} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}{desc_suffix}"
+                    f'</span>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
 
