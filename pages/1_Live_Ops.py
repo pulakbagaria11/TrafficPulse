@@ -14,6 +14,7 @@ from src.corridor import get_corridor_stats
 from src.reporter_score import get_all_reports, init_reports
 from src.flood_risk import get_flood_prone_locations, make_flood_map
 from src.cascade import compute_cascade_risk
+from src.live_replay import initial_cursor, make_replay_map, replay_counts, STEP_OPTIONS
 import folium
 
 st.set_page_config(page_title="Live Ops | TrafficPulse", layout="wide")
@@ -67,7 +68,7 @@ with st.sidebar:
 
     hour_range = st.slider("Hour of day (IST)", 0, 23, (0, 23))
 
-    view_mode = st.radio("Map view", ["Heatmap", "Breakdown hotspots"])
+    view_mode = st.radio("Map view", ["Heatmap", "Breakdown hotspots", "Live Replay"])
 
 # --- Apply filters ---
 filtered = df.copy()
@@ -108,8 +109,41 @@ with map_col:
 
     if view_mode == "Heatmap":
         m = make_heatmap(filtered)
-    else:
+    elif view_mode == "Breakdown hotspots":
         m = make_breakdown_map(filtered)
+    else:
+        st.caption(
+            "Replays the full Astram history in timestamp order to simulate a live incident "
+            "feed -- independent of the filters above, since chronological order matters here."
+        )
+        if 'replay_cursor' not in st.session_state:
+            st.session_state['replay_cursor'] = initial_cursor(df)
+
+        step_label = st.select_slider("Step size", options=list(STEP_OPTIONS.keys()), value='1 day')
+
+        rc1, rc2, rc3 = st.columns(3)
+        with rc1:
+            if st.button("Step Forward", use_container_width=True):
+                st.session_state['replay_cursor'] = min(
+                    st.session_state['replay_cursor'] + STEP_OPTIONS[step_label],
+                    df['start_datetime'].max(),
+                )
+        with rc2:
+            if st.button("Reset to Start", use_container_width=True):
+                st.session_state['replay_cursor'] = initial_cursor(df)
+        with rc3:
+            if st.button("Jump to End", use_container_width=True):
+                st.session_state['replay_cursor'] = df['start_datetime'].max()
+
+        cursor = st.session_state['replay_cursor']
+        cumulative_count, recent_count = replay_counts(df, cursor, step_label)
+
+        rm1, rm2, rm3 = st.columns(3)
+        rm1.metric("Simulated Clock", cursor.strftime('%d %b %Y, %H:%M'))
+        rm2.metric("Incidents Received", f"{cumulative_count:,}")
+        rm3.metric(f"New ({step_label})", f"+{recent_count}")
+
+        m = make_replay_map(df, cursor, step_label)
 
     # Overlay citizen reports
     if not reports_df.empty:
@@ -124,7 +158,9 @@ with map_col:
 
     st_folium(m, width=None, height=500, returned_objects=[])
 
-    if not reports_df.empty:
+    if view_mode == "Live Replay":
+        st.caption("Heatmap: cumulative incidents up to the simulated clock. Red markers: incidents that just arrived this step.")
+    elif not reports_df.empty:
         st.caption(
             f"Green: verified citizen reports ({int(reports_df['verified'].sum())})   "
             f"Orange: pending ({int((~reports_df['verified']).sum())})"
