@@ -179,8 +179,9 @@ with road_col2:
         "Shared incident bus — auto-route events to BBMP, BESCOM, BWSSB by cause",
         "Repair SLA tracker — work order auto-raised for repeat pothole locations",
         "Cascade predictor — model second-order congestion on adjacent corridors",
+        "Mappls live traffic + routing overlay — integration attempted, pending Maps SDK account access",
     ]:
         st.markdown(f'<div class="roadmap-item">{item}</div>', unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Built on Astram incident data provided by the hackathon. Mapping via Mappls.")
+st.caption("Built on Astram incident data provided by the hackathon.")

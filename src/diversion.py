@@ -1,11 +1,8 @@
 """
 Diversion routing module.
 
-Mappls routing REST API calls are blocked server-side by CloudFront IP restriction
-(the domain whitelist applies to client-side JS, not Python backends).
-Routing is therefore handled via:
-  1. mappls.direction() JavaScript plugin embedded in the map HTML (client-side, works)
-  2. Corridor-based alternate suggestions derived from the Astram dataset (no API needed)
+Suggests alternate corridors using historical Astram corridor data —
+no external routing API dependency.
 """
 
 CORRIDOR_ALTERNATES = {
@@ -35,11 +32,3 @@ def get_corridor_alternates(corridor):
             return alts
     # Generic fallback
     return ['Outer Ring Road', 'NICE Road corridor']
-
-
-def get_route(origin_lat, origin_lon, dest_lat, dest_lon):
-    """
-    Returns None — routing is done client-side via Mappls JS SDK.
-    This stub keeps imports in pages intact.
-    """
-    return None, "Routing via Mappls JS SDK (client-side). See the map below."

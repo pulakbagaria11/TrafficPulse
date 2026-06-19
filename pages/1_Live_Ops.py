@@ -12,7 +12,6 @@ from src.hotspot import make_heatmap, make_marker_map, top_hotspots
 from src.tow_truck import make_breakdown_map, preposition_recommendations
 from src.corridor import get_corridor_stats
 from src.reporter_score import get_all_reports, init_reports
-from src.mappls_map import make_incident_map_html
 import folium
 
 st.set_page_config(page_title="Live Ops | TrafficPulse", layout="wide")
@@ -66,7 +65,7 @@ with st.sidebar:
 
     hour_range = st.slider("Hour of day (IST)", 0, 23, (0, 23))
 
-    view_mode = st.radio("Map view", ["Mappls (live traffic)", "Heatmap", "Breakdown hotspots"])
+    view_mode = st.radio("Map view", ["Heatmap", "Breakdown hotspots"])
 
 # --- Apply filters ---
 filtered = df.copy()
@@ -105,62 +104,29 @@ with map_col:
     st.subheader("Incident Map")
     reports_df = get_all_reports()
 
-    if view_mode == "Mappls (live traffic)":
-        # Build incident list for Mappls map
-        sample = filtered.sample(min(80, len(filtered)), random_state=42)
-        incidents_payload = [
-            {
-                'lat': float(r['latitude']),
-                'lon': float(r['longitude']),
-                'cause': str(r.get('event_cause', '')),
-                'priority': str(r.get('priority', '')),
-            }
-            for _, r in sample.iterrows()
-        ]
-        # Add citizen reports
-        if not reports_df.empty:
-            for _, r in reports_df.iterrows():
-                incidents_payload.append({
-                    'lat': float(r['lat']),
-                    'lon': float(r['lon']),
-                    'cause': str(r['cause']),
-                    'priority': 'Citizen Report',
-                })
-
-        map_html, map_err = make_incident_map_html(incidents_payload, height=500)
-
-        if map_html:
-            st.components.v1.html(map_html, height=510)
-            st.caption("Mappls Maps SDK — live traffic layer active. Red: high priority, Blue: low priority.")
-        else:
-            st.warning(f"Mappls map unavailable: {map_err}. Showing Folium fallback.")
-            m = make_heatmap(filtered)
-            st_folium(m, width=None, height=500, returned_objects=[])
-
+    if view_mode == "Heatmap":
+        m = make_heatmap(filtered)
     else:
-        if view_mode == "Heatmap":
-            m = make_heatmap(filtered)
-        else:
-            m = make_breakdown_map(filtered)
+        m = make_breakdown_map(filtered)
 
-        # Overlay citizen reports
-        if not reports_df.empty:
-            for _, r in reports_df.iterrows():
-                color = '#27ae60' if r.get('verified') else '#f39c12'
-                folium.CircleMarker(
-                    location=[r['lat'], r['lon']],
-                    radius=8, color=color, fill=True, fill_opacity=0.9,
-                    tooltip=f"Citizen report: {str(r['cause']).replace('_',' ').title()} "
-                            f"({'Verified' if r.get('verified') else 'Pending'})",
-                ).add_to(m)
+    # Overlay citizen reports
+    if not reports_df.empty:
+        for _, r in reports_df.iterrows():
+            color = '#27ae60' if r.get('verified') else '#f39c12'
+            folium.CircleMarker(
+                location=[r['lat'], r['lon']],
+                radius=8, color=color, fill=True, fill_opacity=0.9,
+                tooltip=f"Citizen report: {str(r['cause']).replace('_',' ').title()} "
+                        f"({'Verified' if r.get('verified') else 'Pending'})",
+            ).add_to(m)
 
-        st_folium(m, width=None, height=500, returned_objects=[])
+    st_folium(m, width=None, height=500, returned_objects=[])
 
-        if not reports_df.empty:
-            st.caption(
-                f"Green: verified citizen reports ({int(reports_df['verified'].sum())})   "
-                f"Orange: pending ({int((~reports_df['verified']).sum())})"
-            )
+    if not reports_df.empty:
+        st.caption(
+            f"Green: verified citizen reports ({int(reports_df['verified'].sum())})   "
+            f"Orange: pending ({int((~reports_df['verified']).sum())})"
+        )
 
 with side_col:
     st.subheader("Top Hotspots")
