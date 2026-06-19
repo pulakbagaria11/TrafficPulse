@@ -15,6 +15,7 @@ from src.recommender import get_recommendation, scale_for_crowd_size
 from src.diversion import get_corridor_alternates, make_route_map
 from src.emergency import get_emergency_advisory
 from src.cascade import top_cascade_for_corridor
+from src.corridor import get_corridor_stats
 
 st.set_page_config(page_title="Prediction | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -212,6 +213,23 @@ if run:
         )
 
         if top_corridor:
+            corridor_stats = get_corridor_stats(df, top_n=999)
+            stat_row = corridor_stats[corridor_stats['corridor'] == top_corridor]
+            avg_duration = (
+                stat_row.iloc[0]['avg_duration_mins']
+                if not stat_row.empty and 'avg_duration_mins' in stat_row.columns
+                else rec['response_minutes'] * 3
+            )
+            expected_congestion_mins = round(closure_prob * avg_duration)
+
+            ic1, ic2 = st.columns(2)
+            ic1.metric("Estimated Congestion Avoided", f"~{expected_congestion_mins} min")
+            ic2.caption(
+                f"Closure probability ({closure_prob:.0%}) x historical average closure "
+                f"duration on {top_corridor} ({avg_duration:.0f} min) -- the expected disruption "
+                f"this diversion plan keeps off the road, not a guarantee."
+            )
+
             st.caption(f"Source: historical Astram data — {corridor_val.count()} incidents recorded on {top_corridor}.")
 
             cascade_note = top_cascade_for_corridor(df, top_corridor)
