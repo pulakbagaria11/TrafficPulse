@@ -19,18 +19,27 @@ def _get_key():
 
 def make_incident_map_html(incidents, center_lat=12.9716, center_lon=77.5946,
                            zoom=11, height=500):
+    """
+    Renders incident markers on a Mappls vector map with live traffic layer.
+    Runs entirely client-side — no server-side API calls.
+    The domain 'trafficpulse.streamlit.app' must be whitelisted in Mappls console.
+    """
     key = _get_key()
     if not key:
-        return None, "Mappls API key not configured."
+        return None, "Mappls API key not configured in Streamlit secrets."
 
     safe = []
     for inc in incidents[:300]:
+        lat = inc.get('lat', inc.get('latitude', 0))
+        lon = inc.get('lon', inc.get('longitude', 0))
+        if not lat or not lon:
+            continue
         safe.append({
-            'lat': float(inc.get('lat', inc.get('latitude', 0))),
-            'lon': float(inc.get('lon', inc.get('longitude', 0))),
+            'lat': round(float(lat), 5),
+            'lon': round(float(lon), 5),
             'cause': str(inc.get('cause', inc.get('event_cause', ''))).replace('_', ' ').title(),
             'priority': str(inc.get('priority', '')),
-            'color': '#c0392b' if str(inc.get('priority', '')).lower() == 'high' else '#2980b9',
+            'color': '#c0392b' if str(inc.get('priority', '')).lower() == 'high' else '#1a3a5c',
         })
 
     incidents_json = json.dumps(safe)
@@ -41,21 +50,23 @@ def make_incident_map_html(incidents, center_lat=12.9716, center_lon=77.5946,
 <meta charset="utf-8">
 <style>
   * {{ margin:0; padding:0; box-sizing:border-box; }}
-  html, body {{ height:100%; }}
+  html, body {{ height:100%; overflow:hidden; }}
   #map {{ width:100%; height:{height}px; }}
-  .info-panel {{
-    position:absolute; bottom:30px; left:10px; background:white;
-    padding:8px 12px; border-radius:4px; font-size:12px;
-    border:1px solid #ccc; z-index:999; font-family:sans-serif;
+  .legend {{
+    position:absolute; bottom:24px; left:10px; z-index:999;
+    background:rgba(255,255,255,0.92); padding:6px 10px;
+    border-radius:4px; border:1px solid #ccc;
+    font-family:sans-serif; font-size:11px; line-height:1.8;
   }}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="info-panel">
+<div class="legend">
   <span style="color:#c0392b;">&#9679;</span> High Priority &nbsp;
-  <span style="color:#2980b9;">&#9679;</span> Low Priority &nbsp;
-  <span style="color:#f39c12;">&#9679;</span> Traffic (live)
+  <span style="color:#1a3a5c;">&#9679;</span> Low Priority<br>
+  <span style="color:#27ae60;">&#9679;</span> Citizen report (verified) &nbsp;
+  <span style="color:#f39c12;">&#9679;</span> Pending
 </div>
 <script>
 var INCIDENTS = {incidents_json};
@@ -69,24 +80,23 @@ function initMap() {{
   }});
 
   map.addListener('load', function() {{
-    // Traffic layer
+    // Live traffic layer
     new mappls.TrafficLayer({{ map: map }});
 
-    // Incident markers
+    // Place one marker per incident
     INCIDENTS.forEach(function(inc) {{
-      if (!inc.lat || !inc.lon) return;
-      var el = document.createElement('div');
-      el.style.cssText = [
-        'width:10px', 'height:10px', 'border-radius:50%',
-        'background:' + inc.color,
-        'border:1px solid white',
-        'cursor:pointer'
-      ].join(';');
-
-      var marker = new mappls.Marker({{
+      new mappls.Marker({{
         map: map,
         position: {{ lat: inc.lat, lng: inc.lon }},
         fitbounds: false,
+        icon: {{
+          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">' +
+            '<circle cx="6" cy="6" r="5" fill="' + inc.color + '" stroke="white" stroke-width="1"/>' +
+            '</svg>'
+          ),
+          size: [12, 12]
+        }},
         popupHtml: '<b>' + inc.cause + '</b><br>Priority: ' + inc.priority
       }});
     }});
@@ -101,34 +111,49 @@ function initMap() {{
 
 
 def make_route_map_html(origin_lat, origin_lon, dest_lat, dest_lon,
-                        waypoints=None, height=400):
+                        incident_lat=None, incident_lon=None,
+                        incident_label="Incident", height=380):
+    """
+    Shows a Mappls map with a direction route drawn between origin and dest.
+    The incident location is marked separately.
+    All client-side — no server Python REST calls.
+    """
     key = _get_key()
     if not key:
         return None, "Mappls API key not configured."
 
-    wp_json = json.dumps(waypoints or [])
+    inc_lat = incident_lat or (origin_lat + dest_lat) / 2
+    inc_lon = incident_lon or (origin_lon + dest_lon) / 2
 
     html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-  * {{ margin:0; padding:0; }}
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  html, body {{ height:100%; overflow:hidden; }}
   #map {{ width:100%; height:{height}px; }}
+  #route-info {{
+    position:absolute; top:8px; right:8px; z-index:999;
+    background:rgba(255,255,255,0.95); padding:8px 12px;
+    border-radius:4px; border:1px solid #ccc;
+    font-family:sans-serif; font-size:11px; min-width:160px;
+  }}
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="route-info">Calculating route...</div>
 <script>
-var ORIGIN = [{origin_lat}, {origin_lon}];
-var DEST = [{dest_lat}, {dest_lon}];
+var ORIGIN = {{ lat: {origin_lat}, lng: {origin_lon} }};
+var DEST   = {{ lat: {dest_lat},   lng: {dest_lon}   }};
+var INC    = {{ lat: {inc_lat},    lng: {inc_lon}    }};
+var INC_LABEL = "{incident_label}";
 
 function initMap() {{
-  var midLat = (ORIGIN[0] + DEST[0]) / 2;
-  var midLon = (ORIGIN[1] + DEST[1]) / 2;
-
+  var mid = [(ORIGIN.lat + DEST.lat)/2, (ORIGIN.lng + DEST.lng)/2];
   var map = new mappls.Map('map', {{
-    center: [midLat, midLon],
+    center: mid,
     zoom: 12,
     geolocation: false
   }});
@@ -136,31 +161,48 @@ function initMap() {{
   map.addListener('load', function() {{
     new mappls.TrafficLayer({{ map: map }});
 
+    // Mark the incident location
     new mappls.Marker({{
       map: map,
-      position: {{ lat: ORIGIN[0], lng: ORIGIN[1] }},
+      position: INC,
       fitbounds: false,
-      popupHtml: '<b>Origin</b>'
+      popupHtml: '<b>' + INC_LABEL + '</b><br>Incident location'
     }});
 
-    new mappls.Marker({{
-      map: map,
-      position: {{ lat: DEST[0], lng: DEST[1] }},
-      fitbounds: false,
-      popupHtml: '<b>Destination</b>'
-    }});
-
-    mappls.direction({{
-      map: map,
-      origin: {{ lat: ORIGIN[0], lng: ORIGIN[1] }},
-      destination: {{ lat: DEST[0], lng: DEST[1] }},
-      alternatives: true,
-      profile: 'driving'
-    }});
+    // Draw the route using Mappls Direction
+    try {{
+      mappls.direction({{
+        map: map,
+        origin: ORIGIN,
+        destination: DEST,
+        alternatives: true,
+        callback: function(data) {{
+          if (data && data.routes && data.routes.length > 0) {{
+            var r = data.routes[0];
+            var legs = r.legs && r.legs[0];
+            var dist = legs ? (legs.distance/1000).toFixed(1) + ' km' : '?';
+            var time = legs ? Math.round(legs.duration/60) + ' min' : '?';
+            document.getElementById('route-info').innerHTML =
+              '<b>Alternate route</b><br>' +
+              'Distance: ' + dist + '<br>' +
+              'Est. time: ' + time;
+          }} else {{
+            document.getElementById('route-info').innerHTML = 'Route drawn on map';
+          }}
+        }}
+      }});
+    }} catch(e) {{
+      // Fallback: show markers only
+      new mappls.Marker({{ map: map, position: ORIGIN, fitbounds: false,
+        popupHtml: '<b>Origin</b>' }});
+      new mappls.Marker({{ map: map, position: DEST, fitbounds: false,
+        popupHtml: '<b>Destination</b>' }});
+      document.getElementById('route-info').innerHTML = 'Routing plugin loading...';
+    }}
   }});
 }}
 </script>
-<script src="https://apis.mappls.com/advancedmaps/api/{key}/map_sdk?layer=vector&v=3.0&callback=initMap" async defer></script>
+<script src="https://apis.mappls.com/advancedmaps/api/{key}/map_sdk?layer=vector&v=3.0&plugins=direction&callback=initMap" async defer></script>
 </body>
 </html>"""
 

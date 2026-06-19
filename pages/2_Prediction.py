@@ -160,36 +160,32 @@ if run:
     # --- Diversion ---
     if rec.get('diversion'):
         st.markdown("---")
-        st.subheader("Alternate Routes")
+        st.subheader("Alternate Routes (Mappls)")
         rc1, rc2 = st.columns([2, 1])
 
         with rc1:
-            with st.spinner("Fetching routes from Mappls..."):
-                routes, err = get_route(lat - 0.03, lon - 0.03, lat + 0.03, lon + 0.03)
-
-            if routes:
-                for i, r in enumerate(routes):
-                    st.markdown(
-                        f"**Route {i+1}:** {r.get('summary', 'Alternate')} — "
-                        f"{r.get('distance_km', '?')} km, ~{r.get('duration_min', '?')} min"
-                    )
-                # Show Mappls route map
-                route_html, map_err = make_route_map_html(
-                    lat - 0.03, lon - 0.03, lat + 0.03, lon + 0.03, height=300
-                )
-                if route_html:
-                    st.components.v1.html(route_html, height=310)
+            # Mappls JS SDK handles routing client-side — draws route on map
+            route_html, map_err = make_route_map_html(
+                origin_lat=lat - 0.04, origin_lon=lon - 0.02,
+                dest_lat=lat + 0.04, dest_lon=lon + 0.02,
+                incident_lat=lat, incident_lon=lon,
+                incident_label=cause_label(event_cause),
+                height=360,
+            )
+            if route_html:
+                st.components.v1.html(route_html, height=370)
+                st.caption("Route computed by Mappls JS SDK in your browser. Red marker = incident location.")
             else:
-                st.caption(f"Mappls routing: {err}")
+                st.info(f"Map unavailable: {map_err}")
 
         with rc2:
-            # Corridor-based fallback always shown
+            # Corridor-based alternates from historical data
             corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
             top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
             alts = get_corridor_alternates(top_corridor or '')
 
             st.markdown("**Suggested alternate corridors**")
-            st.caption(f"Historically used when {cause_label(event_cause)} is reported on this route.")
+            st.caption(f"Derived from historical Astram data — corridors used when {cause_label(event_cause)} is reported nearby.")
             if alts:
                 for a in alts:
                     st.markdown(f"- {a}")
