@@ -104,7 +104,7 @@ function initMap() {{
   }});
 }}
 </script>
-<script src="https://apis.mappls.com/advancedmaps/api/{key}/map_sdk?layer=vector&v=3.0&callback=initMap" async defer></script>
+<script src="https://sdk.mappls.com/map/sdk/web?layer=vector&v=3.0&access_token={key}&callback=initMap" async defer></script>
 </body>
 </html>"""
 
@@ -203,7 +203,7 @@ function initMap() {{
   }});
 }}
 </script>
-<script src="https://apis.mappls.com/advancedmaps/api/{key}/map_sdk?layer=vector&v=3.0&plugins=direction&callback=initMap" async defer></script>
+<script src="https://sdk.mappls.com/map/sdk/web?layer=vector&v=3.0&plugins=direction&access_token={key}&callback=initMap" async defer></script>
 </body>
 </html>"""
 
