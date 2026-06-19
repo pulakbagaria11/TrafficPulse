@@ -12,10 +12,18 @@ MAPPLS_GEOCODE_URL = (
 
 
 def _get_key():
-    try:
-        return st.secrets["mappls"]["api_key"]
-    except Exception:
-        return None
+    for accessor in [
+        lambda: st.secrets["mappls"]["api_key"],
+        lambda: st.secrets["MAPPLS_API_KEY"],
+        lambda: st.secrets["api_key"],
+    ]:
+        try:
+            key = accessor()
+            if key:
+                return str(key).strip()
+        except Exception:
+            continue
+    return None
 
 
 def get_route(origin_lat, origin_lon, dest_lat, dest_lon):

@@ -81,6 +81,7 @@ def load_data(path=None):
             df[col] = df[col].dt.tz_convert('Asia/Kolkata')
 
     if 'event_cause' in df.columns:
+        df = df[df['event_cause'].astype(str).str.lower() != 'test_demo']
         df['event_cause'] = (
             df['event_cause']
             .fillna('unknown')

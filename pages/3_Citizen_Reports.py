@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_prep import load_data, BENGALURU_CENTER
+from src.data_prep import load_data, BENGALURU_CENTER, cause_label
 from src.reporter_score import submit_report, get_all_reports, init_reports
 
 st.set_page_config(page_title="Citizen Reports | TrafficPulse", layout="wide")
@@ -230,6 +230,3 @@ with tab_police:
                         st.toast(f"Officer dispatched to report {i+1}.")
 
 
-def cause_label(cause):
-    from src.data_prep import CAUSE_LABELS
-    return CAUSE_LABELS.get(cause, str(cause).replace('_', ' ').title())

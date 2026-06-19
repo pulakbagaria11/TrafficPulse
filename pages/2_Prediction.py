@@ -188,9 +188,13 @@ if run:
         fig3.update_layout(xaxis_title="Importance", yaxis_title=None,
                            margin=dict(l=0, r=0, t=10, b=0), height=260)
         st.plotly_chart(fig3, use_container_width=True)
+        p_acc = models['priority']['accuracy']
+        p_te = models['priority'].get('test_size', '?')
+        c_acc = models['closure']['accuracy'] if 'closure' in models else None
         st.caption(
-            f"Priority model accuracy: {models['priority']['accuracy']:.1%}  |  "
-            f"Closure model accuracy: {models['closure']['accuracy']:.1%}"
+            f"Trained on Nov–Feb, tested on Mar–Apr ({p_te} events). "
+            f"Priority accuracy: {p_acc:.1%}"
+            + (f"  |  Closure accuracy: {c_acc:.1%}" if c_acc else "")
         )
 
 else:

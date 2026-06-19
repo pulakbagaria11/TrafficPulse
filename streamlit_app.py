@@ -62,7 +62,7 @@ if data_path.exists():
     df = pd.read_csv(data_path, na_values=['NULL', 'null', ''])
     total = len(df)
     high = int((df['priority'].str.lower() == 'high').sum()) if 'priority' in df.columns else 0
-    closures = int((df['requires_road_closure'].str.upper() == 'TRUE').sum()) if 'requires_road_closure' in df.columns else 0
+    closures = int(df['requires_road_closure'].astype(str).str.upper().eq('TRUE').sum()) if 'requires_road_closure' in df.columns else 0
     causes = df['event_cause'].nunique() if 'event_cause' in df.columns else 0
 
     c1, c2, c3, c4 = st.columns(4)
