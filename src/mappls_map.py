@@ -81,8 +81,8 @@ function initMap() {{
   }});
 
   map.addListener('load', function() {{
-    // Live traffic layer
-    new mappls.TrafficLayer({{ map: map }});
+    // Live traffic layer (best-effort — not all SDK builds expose this)
+    try {{ new mappls.TrafficLayer({{ map: map }}); }} catch (e) {{}}
 
     // Place one marker per incident
     INCIDENTS.forEach(function(inc) {{
@@ -160,7 +160,7 @@ function initMap() {{
   }});
 
   map.addListener('load', function() {{
-    new mappls.TrafficLayer({{ map: map }});
+    try {{ new mappls.TrafficLayer({{ map: map }}); }} catch (e) {{}}
 
     // Mark the incident location
     new mappls.Marker({{
