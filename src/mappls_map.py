@@ -59,9 +59,15 @@ def make_incident_map_html(incidents, center_lat=12.9716, center_lon=77.5946,
     border-radius:4px; border:1px solid #ccc;
     font-family:sans-serif; font-size:11px; line-height:1.8;
   }}
+  #debug {{
+    position:absolute; top:0; left:0; right:0; z-index:1000;
+    background:#fdecea; color:#611a15; font-family:monospace;
+    font-size:11px; padding:4px 8px; display:none; white-space:pre-wrap;
+  }}
 </style>
 </head>
 <body>
+<div id="debug"></div>
 <div id="map"></div>
 <div class="legend">
   <span style="color:#c0392b;">&#9679;</span> High Priority &nbsp;
@@ -72,39 +78,63 @@ def make_incident_map_html(incidents, center_lat=12.9716, center_lon=77.5946,
 <script>
 var INCIDENTS = {incidents_json};
 
+function showDebug(msg) {{
+  var d = document.getElementById('debug');
+  d.style.display = 'block';
+  d.innerText = msg;
+}}
+window.onerror = function(msg, url, line) {{
+  showDebug('JS error: ' + msg + ' (line ' + line + ')');
+}};
+
+var sdkLoaded = false;
+
 function initMap() {{
-  var map = new mappls.Map('map', {{
-    center: [{center_lat}, {center_lon}],
-    zoom: {zoom},
-    geolocation: false,
-    clickableIcons: false
-  }});
+  sdkLoaded = true;
+  try {{
+    var map = new mappls.Map('map', {{
+      center: [{center_lat}, {center_lon}],
+      zoom: {zoom},
+      geolocation: false,
+      clickableIcons: false
+    }});
 
-  map.addListener('load', function() {{
-    // Live traffic layer (best-effort — not all SDK builds expose this)
-    try {{ new mappls.TrafficLayer({{ map: map }}); }} catch (e) {{}}
+    map.addListener('load', function() {{
+      showDebug('Map loaded OK. ' + INCIDENTS.length + ' incidents to plot.');
+      // Live traffic layer (best-effort — not all SDK builds expose this)
+      try {{ new mappls.TrafficLayer({{ map: map }}); }} catch (e) {{}}
 
-    // Place one marker per incident
-    INCIDENTS.forEach(function(inc) {{
-      new mappls.Marker({{
-        map: map,
-        position: {{ lat: inc.lat, lng: inc.lon }},
-        fitbounds: false,
-        icon: {{
-          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">' +
-            '<circle cx="6" cy="6" r="5" fill="' + inc.color + '" stroke="white" stroke-width="1"/>' +
-            '</svg>'
-          ),
-          size: [12, 12]
-        }},
-        popupHtml: '<b>' + inc.cause + '</b><br>Priority: ' + inc.priority
+      // Place one marker per incident
+      INCIDENTS.forEach(function(inc) {{
+        new mappls.Marker({{
+          map: map,
+          position: {{ lat: inc.lat, lng: inc.lon }},
+          fitbounds: false,
+          icon: {{
+            url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+              '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12">' +
+              '<circle cx="6" cy="6" r="5" fill="' + inc.color + '" stroke="white" stroke-width="1"/>' +
+              '</svg>'
+            ),
+            size: [12, 12]
+          }},
+          popupHtml: '<b>' + inc.cause + '</b><br>Priority: ' + inc.priority
+        }});
       }});
     }});
-  }});
+  }} catch (e) {{
+    showDebug('initMap failed: ' + e.message);
+  }}
 }}
+
+setTimeout(function() {{
+  if (!sdkLoaded) {{
+    showDebug('Mappls SDK script never called initMap after 5s — script likely blocked (check domain whitelist / key / network tab for the sdk.mappls.com request).');
+  }}
+}}, 5000);
 </script>
-<script src="https://sdk.mappls.com/map/sdk/web?layer=vector&v=3.0&access_token={key}&callback=initMap" async defer></script>
+<script src="https://sdk.mappls.com/map/sdk/web?layer=vector&v=3.0&access_token={key}&callback=initMap" async defer
+  onerror="showDebug('Failed to load Mappls SDK script (network/CORS/404 error).')"></script>
 </body>
 </html>"""
 
