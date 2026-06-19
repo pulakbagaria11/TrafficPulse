@@ -107,7 +107,7 @@ with map_col:
 
     if view_mode == "Mappls (live traffic)":
         # Build incident list for Mappls map
-        sample = filtered.sample(min(200, len(filtered)), random_state=42)
+        sample = filtered.sample(min(80, len(filtered)), random_state=42)
         incidents_payload = [
             {
                 'lat': float(r['latitude']),

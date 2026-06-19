@@ -10,8 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data_prep import load_data, cause_label, BENGALURU_CENTER
 from src.severity_model import train_models, predict_event
 from src.recommender import get_recommendation
-from src.diversion import get_route, get_corridor_alternates
-from src.mappls_map import make_route_map_html
+from src.diversion import get_corridor_alternates
 
 st.set_page_config(page_title="Prediction | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -160,39 +159,29 @@ if run:
     # --- Diversion ---
     if rec.get('diversion'):
         st.markdown("---")
-        st.subheader("Alternate Routes (Mappls)")
-        rc1, rc2 = st.columns([2, 1])
+        st.subheader("Diversion Plan")
 
-        with rc1:
-            # Mappls JS SDK handles routing client-side — draws route on map
-            route_html, map_err = make_route_map_html(
-                origin_lat=lat - 0.04, origin_lon=lon - 0.02,
-                dest_lat=lat + 0.04, dest_lon=lon + 0.02,
-                incident_lat=lat, incident_lon=lon,
-                incident_label=cause_label(event_cause),
-                height=360,
-            )
-            if route_html:
-                st.components.v1.html(route_html, height=370)
-                st.caption("Route computed by Mappls JS SDK in your browser. Red marker = incident location.")
-            else:
-                st.info(f"Map unavailable: {map_err}")
+        corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
+        top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
+        alts = get_corridor_alternates(top_corridor or '')
 
-        with rc2:
-            # Corridor-based alternates from historical data
-            corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
-            top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
-            alts = get_corridor_alternates(top_corridor or '')
+        dc1, dc2, dc3 = st.columns(3)
+        dc1.markdown("**Affected corridor**")
+        dc1.markdown(top_corridor or "Unknown — check location")
 
-            st.markdown("**Suggested alternate corridors**")
-            st.caption(f"Derived from historical Astram data — corridors used when {cause_label(event_cause)} is reported nearby.")
-            if alts:
-                for a in alts:
-                    st.markdown(f"- {a}")
-            else:
-                st.markdown("- Outer Ring Road\n- NICE Road corridor")
-            if top_corridor:
-                st.caption(f"Based on: {top_corridor}")
+        dc2.markdown("**Alternate corridors**")
+        for a in (alts or ['Outer Ring Road', 'NICE Road']):
+            dc2.markdown(f"- {a}")
+
+        dc3.markdown("**Recommended action**")
+        dc3.markdown(
+            "Post diversion signs at junction entry points. "
+            "Alert field officers on alternate corridors. "
+            "See Live Ops map for real-time traffic on alternates."
+        )
+
+        if top_corridor:
+            st.caption(f"Source: historical Astram data — {corridor_val.count()} incidents recorded on {top_corridor}.")
 
     # --- Feature importance ---
     st.markdown("---")
