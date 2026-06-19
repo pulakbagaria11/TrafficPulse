@@ -11,7 +11,7 @@ from streamlit_folium import st_folium
 
 from src.data_prep import load_data, cause_label, BENGALURU_CENTER
 from src.severity_model import train_models, predict_event
-from src.recommender import get_recommendation
+from src.recommender import get_recommendation, scale_for_crowd_size
 from src.diversion import get_corridor_alternates, make_route_map
 from src.emergency import get_emergency_advisory
 from src.cascade import top_cascade_for_corridor
@@ -84,6 +84,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+planned_event = st.checkbox(
+    "Planned event (festival / rally / sports) — scale resources by expected attendance"
+)
+attendance = 0
+if planned_event:
+    attendance = st.number_input(
+        "Expected attendance", min_value=0, value=5000, step=500,
+    )
+
 run = st.button("Run Prediction", type="primary")
 st.markdown("---")
 
@@ -96,9 +105,16 @@ if run:
     priority_prob = preds.get('priority', 0.5)
     closure_prob = preds.get('closure', 0.1)
     rec = get_recommendation(priority_prob, closure_prob, event_cause)
+    if planned_event and attendance > 0:
+        rec = scale_for_crowd_size(rec, attendance)
 
     tier_color = {'Critical': '#c0392b', 'High': '#e67e22',
                   'Medium': '#f39c12', 'Low': '#27ae60'}.get(rec['tier'], '#1a3a5c')
+
+    corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
+    top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
+    alts = get_corridor_alternates(top_corridor or '')
+    top_alt = (alts or ['ORR North 1'])[0]
 
     # --- Result layout ---
     r1, r2, r3 = st.columns(3)
@@ -120,6 +136,8 @@ if run:
             st.warning("Supervisor required")
         if rec.get('diversion'):
             st.info("Diversion plan required")
+        if rec.get('crowd_attendance'):
+            st.caption(f"Resources scaled up for an expected attendance of {rec['crowd_attendance']:,}.")
 
     with r2:
         st.markdown("**Recommended Response**")
@@ -161,26 +179,22 @@ if run:
         st.plotly_chart(fig, use_container_width=True)
 
     # --- Emergency corridor advisory ---
-    if rec['tier'] == 'Critical':
-        advisory = get_emergency_advisory(df, lat, lon, rec['tier'])
-        if advisory:
-            st.markdown("---")
-            st.warning(
-                f"**Emergency Corridor** — Hold cross-traffic at "
-                f"**{advisory['junction']}** for approximately "
-                f"**{advisory['eta_mins']} min** to allow emergency vehicles through "
-                f"(nearest response point: {advisory['zone']})."
-            )
+    advisory = get_emergency_advisory(df, lat, lon, event_cause, rec)
+    if advisory:
+        st.markdown("---")
+        barricade_note = f" {rec['barricades']} barricade(s) recommended at the hold point." if rec.get('barricades') else ""
+        redirect_note = f" Redirect general traffic via {top_alt}." if top_corridor else ""
+        st.warning(
+            f"**Emergency Corridor** — Hold cross-traffic at "
+            f"**{advisory['junction']}** for approximately "
+            f"**{advisory['eta_mins']} min** to allow emergency vehicles through from "
+            f"{advisory['hub']}.{redirect_note}{barricade_note}"
+        )
 
     # --- Diversion ---
     if rec.get('diversion'):
         st.markdown("---")
         st.subheader("Diversion Plan")
-
-        corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
-        top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
-        alts = get_corridor_alternates(top_corridor or '')
-        top_alt = (alts or ['ORR North 1'])[0]
 
         dc1, dc2, dc3 = st.columns(3)
         dc1.markdown("**Affected corridor**")
