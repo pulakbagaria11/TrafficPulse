@@ -7,10 +7,14 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from streamlit_folium import st_folium
+
 from src.data_prep import load_data, cause_label, BENGALURU_CENTER
 from src.severity_model import train_models, predict_event
 from src.recommender import get_recommendation
-from src.diversion import get_corridor_alternates
+from src.diversion import get_corridor_alternates, make_route_map
+from src.emergency import get_emergency_advisory
+from src.cascade import top_cascade_for_corridor
 
 st.set_page_config(page_title="Prediction | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -156,6 +160,18 @@ if run:
         fig.update_layout(height=240, margin=dict(l=20, r=20, t=30, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
+    # --- Emergency corridor advisory ---
+    if rec['tier'] == 'Critical':
+        advisory = get_emergency_advisory(df, lat, lon, rec['tier'])
+        if advisory:
+            st.markdown("---")
+            st.warning(
+                f"**Emergency Corridor** — Hold cross-traffic at "
+                f"**{advisory['junction']}** for approximately "
+                f"**{advisory['eta_mins']} min** to allow emergency vehicles through "
+                f"(nearest response point: {advisory['zone']})."
+            )
+
     # --- Diversion ---
     if rec.get('diversion'):
         st.markdown("---")
@@ -164,24 +180,37 @@ if run:
         corridor_val = df[df['event_cause'] == event_cause]['corridor'].dropna()
         top_corridor = corridor_val.value_counts().index[0] if len(corridor_val) > 0 else None
         alts = get_corridor_alternates(top_corridor or '')
+        top_alt = (alts or ['ORR North 1'])[0]
 
         dc1, dc2, dc3 = st.columns(3)
         dc1.markdown("**Affected corridor**")
         dc1.markdown(top_corridor or "Unknown — check location")
 
         dc2.markdown("**Alternate corridors**")
-        for a in (alts or ['Outer Ring Road', 'NICE Road']):
+        for a in (alts or ['ORR North 1', 'Hosur Road']):
             dc2.markdown(f"- {a}")
 
         dc3.markdown("**Recommended action**")
         dc3.markdown(
             "Post diversion signs at junction entry points. "
             "Alert field officers on alternate corridors. "
-            "See Live Ops map for real-time traffic on alternates."
+            "See route map below for current conditions."
         )
 
         if top_corridor:
             st.caption(f"Source: historical Astram data — {corridor_val.count()} incidents recorded on {top_corridor}.")
+
+            cascade_note = top_cascade_for_corridor(df, top_corridor)
+            if cascade_note:
+                st.caption(
+                    f"Cascade risk: incidents on {top_corridor} are historically followed by "
+                    f"incidents on {cascade_note['alt_corridor']} within {cascade_note['window_hours']}h "
+                    f"{cascade_note['uplift_x']}x more often than baseline — consider pre-positioning there too."
+                )
+
+            st.markdown("**Suggested Diversion Route**")
+            route_map = make_route_map(df, lat, lon, top_corridor, top_alt)
+            st_folium(route_map, width=None, height=420, returned_objects=[])
 
     # --- Feature importance ---
     st.markdown("---")
