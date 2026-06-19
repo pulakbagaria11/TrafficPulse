@@ -178,8 +178,7 @@ with road_col2:
     for item in [
         "Shared incident bus — auto-route events to BBMP, BESCOM, BWSSB by cause",
         "Repair SLA tracker — work order auto-raised for repeat pothole locations",
-        "Cascade predictor — model second-order congestion on adjacent corridors",
-        "Mappls live traffic + routing overlay — integration attempted, pending Maps SDK account access",
+        "Mappls live traffic SDK overlay — blocked on account tile-serving entitlement; REST routing/ETA already integrated",
     ]:
         st.markdown(f'<div class="roadmap-item">{item}</div>', unsafe_allow_html=True)
 

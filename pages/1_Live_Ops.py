@@ -12,6 +12,8 @@ from src.hotspot import make_heatmap, make_marker_map, top_hotspots
 from src.tow_truck import make_breakdown_map, preposition_recommendations
 from src.corridor import get_corridor_stats
 from src.reporter_score import get_all_reports, init_reports
+from src.flood_risk import get_flood_prone_locations, make_flood_map
+from src.cascade import compute_cascade_risk
 import folium
 
 st.set_page_config(page_title="Live Ops | TrafficPulse", layout="wide")
@@ -215,3 +217,41 @@ if recs:
             )
 else:
     st.info("No breakdown data found in current filter.")
+
+st.markdown("---")
+
+# --- Flood-prone roads ---
+st.subheader("Flood-Prone Roads")
+st.caption("Locations with 2+ historical water-logging incidents.")
+flood_col, flood_list_col = st.columns([3, 1])
+flood_locations = get_flood_prone_locations(filtered)
+with flood_col:
+    if not flood_locations.empty:
+        st_folium(make_flood_map(filtered), width=None, height=380, returned_objects=[])
+    else:
+        st.info("No water-logging hotspots in current filter.")
+with flood_list_col:
+    for _, row in flood_locations.head(6).iterrows():
+        location_label = row.get('corridor') or f"{row['lat_grid']:.2f}, {row['lon_grid']:.2f}"
+        st.markdown(
+            f"**{location_label}**  \n"
+            f"{int(row['incident_count'])} incidents"
+        )
+
+st.markdown("---")
+
+# --- Cascade risk ---
+st.subheader("Cascade Risk")
+st.caption("Historical likelihood that an incident on a corridor is followed by one on an adjacent corridor within 3 hours, versus that corridor's baseline rate.")
+cascade = compute_cascade_risk(df)
+if not cascade.empty:
+    top_cascade = cascade.head(8).copy()
+    top_cascade['Pair'] = top_cascade['corridor'] + ' -> ' + top_cascade['alt_corridor']
+    display_cols = top_cascade.rename(columns={
+        'cascade_rate_pct': 'Cascade Rate %',
+        'baseline_rate_pct': 'Baseline Rate %',
+        'uplift_x': 'Uplift (x)',
+    })[['Pair', 'Cascade Rate %', 'Baseline Rate %', 'Uplift (x)']]
+    st.dataframe(display_cols, use_container_width=True, hide_index=True)
+else:
+    st.info("Not enough data to compute cascade risk for current corridors.")
