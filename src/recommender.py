@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 
 SEVERITY_TIERS = [
     {
@@ -72,6 +73,7 @@ def get_recommendation(priority_prob, closure_prob, event_cause=''):
     return rec
 
 
+@st.cache_data(show_spinner=False)
 def calibrate_tiers(df):
     if 'priority_enc' not in df.columns:
         return {}
@@ -87,3 +89,35 @@ def calibrate_tiers(df):
             'median_duration_mins': round(float(avg_duration), 1) if avg_duration is not None else None,
         }
     return result
+
+
+# (lower bound, upper bound, extra personnel, extra barricades) for
+# planned events (festivals, rallies, sports) sized by expected attendance.
+CROWD_BANDS = [
+    (0, 1000, 0, 0),
+    (1000, 5000, 3, 2),
+    (5000, 20000, 8, 6),
+    (20000, 50000, 15, 12),
+    (50000, float('inf'), 25, 20),
+]
+
+
+def scale_for_crowd_size(rec, attendance):
+    """Scale a recommendation up for a planned event's expected attendance."""
+    if not attendance or attendance <= 0:
+        return rec
+
+    scaled = dict(rec)
+    for lo, hi, extra_personnel, extra_barricades in CROWD_BANDS:
+        if lo <= attendance < hi:
+            scaled['personnel'] = rec['personnel'] + extra_personnel
+            scaled['barricades'] = rec['barricades'] + extra_barricades
+            if attendance >= 5000:
+                scaled['diversion'] = True
+                scaled['supervisor'] = True
+            if attendance >= 20000:
+                scaled['response_minutes'] = max(3, rec['response_minutes'] - 5)
+            break
+
+    scaled['crowd_attendance'] = attendance
+    return scaled
