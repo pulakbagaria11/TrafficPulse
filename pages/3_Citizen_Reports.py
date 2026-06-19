@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+import random
 from streamlit_folium import st_folium
 import sys
 from pathlib import Path
@@ -8,10 +9,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data_prep import load_data, BENGALURU_CENTER, cause_label
-from src.reporter_score import submit_report, get_all_reports, init_reports
+from src.reporter_score import submit_report, get_all_reports, init_reports, update_report_status
 from src.violation_hotspot import get_violation_hotspots
 from src.incident_response import recommend_for_location
 from src.clearance import expected_clearance_mins, clearance_status
+from src.emergency import get_emergency_advisory
 
 st.set_page_config(page_title="Citizen Reports | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -75,10 +77,13 @@ with tab_citizen:
         with gps_col:
             if st.button("Detect My Location", use_container_width=True):
                 st.session_state['gps_active'] = True
-                st.session_state['gps_area'] = 'Majestic / City Centre'
+                st.session_state['gps_area'] = random.choice(list(BENGALURU_AREAS.keys()))
 
         if st.session_state['gps_active']:
-            st.success("Location detected. You can change it below if incorrect.")
+            st.success(
+                f"Location detected (simulated — browser GPS isn't available in this demo "
+                f"environment): {st.session_state['gps_area']}. Change it below if incorrect."
+            )
 
         with st.form("report_form", clear_on_submit=True):
             reporter_id = st.text_input("Your name or ID (optional)")
@@ -145,23 +150,56 @@ with tab_citizen:
         st_folium(pm, width=None, height=240, returned_objects=[])
 
 
+STATUS_COLORS = {
+    'pending': '#e67e22', 'acknowledged': '#2980b9',
+    'dispatched': '#8e44ad', 'resolved': '#27ae60',
+}
+
 # ===================== POLICE VIEW TAB =====================
 with tab_police:
     reports_df = get_all_reports()
 
     if reports_df.empty:
-        pending_ct = 0
-        verified_ct = 0
+        pending_ct = verified_ct = active_ct = 0
     else:
         verified_ct = int(reports_df['verified'].sum())
         pending_ct = len(reports_df) - verified_ct
+        active_ct = int((reports_df['status'] != 'resolved').sum())
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Reports", len(reports_df) if not reports_df.empty else 0)
-    c2.metric("Verified", verified_ct)
-    c3.metric("Pending Verification", pending_ct)
+    c2.metric("Active", active_ct)
+    c3.metric("Verified", verified_ct)
+    c4.metric("Pending Verification", pending_ct)
 
     st.markdown("---")
+
+    view_df = reports_df
+    sort_by_severity = True
+    if not reports_df.empty:
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            cause_opts = sorted(reports_df['cause'].unique())
+            cause_filter = st.multiselect(
+                "Filter by cause", options=cause_opts,
+                format_func=lambda x: x.replace('_', ' ').title(),
+            )
+        with f2:
+            status_filter = st.multiselect(
+                "Filter by status", options=['pending', 'acknowledged', 'dispatched', 'resolved'],
+                default=['pending', 'acknowledged', 'dispatched'],
+                format_func=lambda x: x.title(),
+            )
+        with f3:
+            sort_by_severity = st.checkbox("Sort by severity", value=True)
+
+        view_df = reports_df.copy()
+        if cause_filter:
+            view_df = view_df[view_df['cause'].isin(cause_filter)]
+        if status_filter:
+            view_df = view_df[view_df['status'].isin(status_filter)]
+
+        st.markdown("---")
 
     map_col, feed_col = st.columns([3, 2])
 
@@ -183,13 +221,13 @@ with tab_police:
                 ).add_to(pm)
 
         # Citizen reports
-        if not reports_df.empty:
-            for _, row in reports_df.iterrows():
-                color = '#27ae60' if row.get('verified') else '#e67e22'
+        if not view_df.empty:
+            for _, row in view_df.iterrows():
+                color = STATUS_COLORS.get(row.get('status', 'pending'), '#e67e22')
                 popup_html = (
                     f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
                     f"By: {row['reporter_id']}<br>"
-                    f"Status: {'Verified' if row.get('verified') else 'Pending'}<br>"
+                    f"Status: {row.get('status', 'pending').title()}<br>"
                     f"{row.get('description','') or ''}"
                 )
                 if row['cause'] == 'pot_holes':
@@ -212,27 +250,41 @@ with tab_police:
                     ).add_to(pm)
 
         st_folium(pm, width=None, height=420, returned_objects=[])
-        st.caption("Gray: historical Astram events   Green: verified citizen reports   Orange: pending reports")
+        st.caption(
+            "Gray: historical Astram events &nbsp; "
+            "Orange: pending &nbsp; Blue: acknowledged &nbsp; "
+            "Purple: dispatched &nbsp; Green: resolved",
+        )
 
     with feed_col:
         st.subheader("Incoming Reports")
 
-        if reports_df.empty:
-            st.info("No reports submitted in this session.")
+        if view_df.empty:
+            st.info("No reports match the current filter.")
             st.caption("Reports submitted via the Submit tab appear here in real time.")
         else:
-            for i, row in reports_df.iterrows():
-                status_color = '#27ae60' if row.get('verified') else '#e67e22'
-                status_text = 'Verified' if row.get('verified') else 'Pending'
+            enriched = []
+            for i, row in view_df.iterrows():
+                rec = recommend_for_location(df, row['cause'], row['lat'], row['lon']) if df is not None else {
+                    'personnel': 0, 'barricades': 0, 'diversion': False, 'alternates': [], 'corridor': None,
+                }
+                enriched.append((i, row, rec))
+            if sort_by_severity:
+                enriched.sort(key=lambda t: t[2]['personnel'], reverse=True)
+
+            for i, row, rec in enriched:
+                status = row.get('status', 'pending')
+                status_color = STATUS_COLORS.get(status, '#e67e22')
                 cause_text = str(row['cause']).replace('_', ' ').title()
                 desc_text = row.get('description', '') or ''
+                verified_badge = " &nbsp;<b style='color:#27ae60;'>Verified</b>" if row.get('verified') else ""
 
                 st.markdown(
                     f"""<div style="border-left:4px solid {status_color};
                     padding:0.5rem 0.8rem;margin-bottom:0.5rem;background:#f9f9f9;border-radius:3px;">
                     <b>{cause_text}</b> &nbsp;
                     <span style="background:{status_color};color:white;padding:1px 6px;
-                    border-radius:3px;font-size:0.75rem;">{status_text}</span><br>
+                    border-radius:3px;font-size:0.75rem;">{status.title()}</span>{verified_badge}<br>
                     <span style="font-size:0.8rem;color:#555;">
                     {row['reporter_id']} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}
                     {(' — ' + desc_text[:60]) if desc_text else ''}
@@ -242,17 +294,19 @@ with tab_police:
                 )
 
                 if df is not None:
-                    clear = clearance_status(row.get('submitted_at'), expected_clearance_mins(df, row['cause']))
-                    rec = recommend_for_location(df, row['cause'], row['lat'], row['lon'])
-
                     info_bits = []
-                    if clear:
-                        timer_color = '#c0392b' if clear['overdue'] else '#555'
-                        info_bits.append(
-                            f"<span style='color:{timer_color};'>Reported {clear['elapsed_mins']}m ago — "
-                            f"expected clear by {clear['clear_by'].strftime('%H:%M')}"
-                            f"{' (overdue)' if clear['overdue'] else ''}</span>"
-                        )
+                    if status == 'resolved' and pd.notna(row.get('resolved_at')):
+                        actual_mins = round((row['resolved_at'] - row['submitted_at']).total_seconds() / 60)
+                        info_bits.append(f"Cleared in {actual_mins}m")
+                    else:
+                        clear = clearance_status(row.get('submitted_at'), expected_clearance_mins(df, row['cause']))
+                        if clear:
+                            timer_color = '#c0392b' if clear['overdue'] else '#555'
+                            info_bits.append(
+                                f"<span style='color:{timer_color};'>Reported {clear['elapsed_mins']}m ago — "
+                                f"expected clear by {clear['clear_by'].strftime('%H:%M')}"
+                                f"{' (overdue)' if clear['overdue'] else ''}</span>"
+                            )
                     info_bits.append(
                         f"Recommended: {rec['personnel']} officer(s)"
                         + (f", {rec['barricades']} barricade(s)" if rec['barricades'] else "")
@@ -265,17 +319,38 @@ with tab_police:
                     if rec.get('diversion') and rec.get('alternates'):
                         corridor_note = f" (corridor: {rec['corridor']})" if rec.get('corridor') else ""
                         st.markdown(
-                            f"<div style='font-size:0.78rem;color:#1a3a5c;margin:-0.2rem 0 0.5rem 0;'>"
+                            f"<div style='font-size:0.78rem;color:#1a3a5c;margin:-0.2rem 0 0.3rem 0;'>"
                             f"Diversion suggested via {rec['alternates'][0]}{corridor_note}</div>",
                             unsafe_allow_html=True,
                         )
 
-                a_col, d_col = st.columns(2)
-                with a_col:
-                    if st.button("Acknowledge", key=f"ack_{i}", use_container_width=True):
-                        st.toast(f"Report {i+1} acknowledged.")
-                with d_col:
-                    if st.button("Dispatch Officer", key=f"dis_{i}", use_container_width=True):
-                        st.toast(f"Officer dispatched to report {i+1}.")
+                    advisory = get_emergency_advisory(df, row['lat'], row['lon'], row['cause'], rec)
+                    if advisory and status != 'resolved':
+                        st.markdown(
+                            f"<div style='font-size:0.78rem;color:#c0392b;margin:-0.2rem 0 0.5rem 0;'>"
+                            f"Emergency corridor: hold {advisory['junction']} (~{advisory['eta_mins']}m "
+                            f"from {advisory['hub']})</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                if status == 'resolved':
+                    continue
+
+                btn_cols = st.columns(3)
+                with btn_cols[0]:
+                    if status == 'pending':
+                        if st.button("Acknowledge", key=f"ack_{i}", use_container_width=True):
+                            update_report_status(i, 'acknowledged')
+                            st.rerun()
+                with btn_cols[1]:
+                    if status in ('pending', 'acknowledged'):
+                        if st.button("Dispatch", key=f"dis_{i}", use_container_width=True):
+                            update_report_status(i, 'dispatched')
+                            st.rerun()
+                with btn_cols[2]:
+                    if status in ('acknowledged', 'dispatched'):
+                        if st.button("Resolve", key=f"res_{i}", use_container_width=True):
+                            update_report_status(i, 'resolved')
+                            st.rerun()
 
 

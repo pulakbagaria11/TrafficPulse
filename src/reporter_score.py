@@ -5,6 +5,17 @@ from datetime import datetime
 
 SESSION_KEY = 'citizen_reports'
 
+# Urgent/safety-critical causes act on a single report instead of waiting
+# for 3 corroborating reports -- a lone accident report shouldn't sit
+# "Pending" while the system waits for crowd confirmation.
+MIN_REPORTS_BY_CAUSE = {
+    'accident': 1,
+    'tree_fall': 1,
+    'vip_movement': 1,
+    'protest': 1,
+}
+DEFAULT_MIN_REPORTS = 3
+
 
 def init_reports():
     if SESSION_KEY not in st.session_state:
@@ -22,23 +33,36 @@ def submit_report(reporter_id, cause, lat, lon, description=''):
         'verified': False,
         'points_awarded': 0,
         'submitted_at': datetime.now(),
+        'status': 'pending',
+        'resolved_at': None,
     }
     st.session_state[SESSION_KEY].append(report)
-    _check_auto_verify(lat, lon)
+    _check_auto_verify(lat, lon, cause)
     return len(st.session_state[SESSION_KEY]) - 1
 
 
-def _check_auto_verify(lat, lon, radius_deg=0.002, min_reports=3):
+def _check_auto_verify(lat, lon, cause, radius_deg=0.002):
+    min_reports = MIN_REPORTS_BY_CAUSE.get(cause, DEFAULT_MIN_REPORTS)
     reports = st.session_state.get(SESSION_KEY, [])
     nearby = [
         r for r in reports
         if abs(r['lat'] - lat) < radius_deg and abs(r['lon'] - lon) < radius_deg
+        and r['cause'] == cause
     ]
     if len(nearby) >= min_reports:
         for r in nearby:
             if not r['verified']:
                 r['verified'] = True
                 r['points_awarded'] = 10
+
+
+def update_report_status(idx, new_status):
+    init_reports()
+    reports = st.session_state.get(SESSION_KEY, [])
+    if 0 <= idx < len(reports):
+        reports[idx]['status'] = new_status
+        if new_status == 'resolved':
+            reports[idx]['resolved_at'] = datetime.now()
 
 
 def get_leaderboard():
