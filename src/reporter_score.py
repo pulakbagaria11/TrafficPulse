@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
+from datetime import datetime
 
 SESSION_KEY = 'citizen_reports'
 
@@ -20,6 +21,7 @@ def submit_report(reporter_id, cause, lat, lon, description=''):
         'description': description,
         'verified': False,
         'points_awarded': 0,
+        'submitted_at': datetime.now(),
     }
     st.session_state[SESSION_KEY].append(report)
     _check_auto_verify(lat, lon)

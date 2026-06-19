@@ -9,6 +9,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data_prep import load_data, BENGALURU_CENTER, cause_label
 from src.reporter_score import submit_report, get_all_reports, init_reports
+from src.violation_hotspot import get_violation_hotspots
+from src.incident_response import recommend_for_location
+from src.clearance import expected_clearance_mins, clearance_status
 
 st.set_page_config(page_title="Citizen Reports | TrafficPulse", layout="wide")
 st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
@@ -89,6 +92,13 @@ with tab_citizen:
                 ],
                 format_func=lambda x: x.replace('_', ' ').title(),
             )
+            if cause == 'pot_holes' and df is not None:
+                pothole_count = int((df['event_cause'] == 'pot_holes').sum())
+                recurring = get_violation_hotspots(df[df['event_cause'] == 'pot_holes'], min_incidents=2)
+                st.caption(
+                    f"{pothole_count} historical pothole incidents recorded citywide — "
+                    f"{len(recurring)} recurring locations flagged."
+                )
 
             default_area = st.session_state.get('gps_area') or 'Majestic / City Centre'
             area_options = list(BENGALURU_AREAS.keys())
@@ -176,20 +186,30 @@ with tab_police:
         if not reports_df.empty:
             for _, row in reports_df.iterrows():
                 color = '#27ae60' if row.get('verified') else '#e67e22'
-                folium.CircleMarker(
-                    location=[row['lat'], row['lon']],
-                    radius=10,
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.85,
-                    popup=folium.Popup(
-                        f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
-                        f"By: {row['reporter_id']}<br>"
-                        f"Status: {'Verified' if row.get('verified') else 'Pending'}<br>"
-                        f"{row.get('description','') or ''}",
-                        max_width=220,
-                    ),
-                ).add_to(pm)
+                popup_html = (
+                    f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
+                    f"By: {row['reporter_id']}<br>"
+                    f"Status: {'Verified' if row.get('verified') else 'Pending'}<br>"
+                    f"{row.get('description','') or ''}"
+                )
+                if row['cause'] == 'pot_holes':
+                    folium.Marker(
+                        location=[row['lat'], row['lon']],
+                        icon=folium.Icon(
+                            color='green' if row.get('verified') else 'orange',
+                            icon='wrench', prefix='glyphicon',
+                        ),
+                        popup=folium.Popup(popup_html, max_width=220),
+                    ).add_to(pm)
+                else:
+                    folium.CircleMarker(
+                        location=[row['lat'], row['lon']],
+                        radius=10,
+                        color=color,
+                        fill=True,
+                        fill_opacity=0.85,
+                        popup=folium.Popup(popup_html, max_width=220),
+                    ).add_to(pm)
 
         st_folium(pm, width=None, height=420, returned_objects=[])
         st.caption("Gray: historical Astram events   Green: verified citizen reports   Orange: pending reports")
@@ -220,6 +240,35 @@ with tab_police:
                     </div>""",
                     unsafe_allow_html=True,
                 )
+
+                if df is not None:
+                    clear = clearance_status(row.get('submitted_at'), expected_clearance_mins(df, row['cause']))
+                    rec = recommend_for_location(df, row['cause'], row['lat'], row['lon'])
+
+                    info_bits = []
+                    if clear:
+                        timer_color = '#c0392b' if clear['overdue'] else '#555'
+                        info_bits.append(
+                            f"<span style='color:{timer_color};'>Reported {clear['elapsed_mins']}m ago — "
+                            f"expected clear by {clear['clear_by'].strftime('%H:%M')}"
+                            f"{' (overdue)' if clear['overdue'] else ''}</span>"
+                        )
+                    info_bits.append(
+                        f"Recommended: {rec['personnel']} officer(s)"
+                        + (f", {rec['barricades']} barricade(s)" if rec['barricades'] else "")
+                    )
+                    st.markdown(
+                        f"<div style='font-size:0.78rem;color:#555;margin:-0.3rem 0 0.4rem 0;'>"
+                        + " &nbsp;|&nbsp; ".join(info_bits) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if rec.get('diversion') and rec.get('alternates'):
+                        corridor_note = f" (corridor: {rec['corridor']})" if rec.get('corridor') else ""
+                        st.markdown(
+                            f"<div style='font-size:0.78rem;color:#1a3a5c;margin:-0.2rem 0 0.5rem 0;'>"
+                            f"Diversion suggested via {rec['alternates'][0]}{corridor_note}</div>",
+                            unsafe_allow_html=True,
+                        )
 
                 a_col, d_col = st.columns(2)
                 with a_col:
