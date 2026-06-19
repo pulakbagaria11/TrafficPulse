@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import folium
+from streamlit_folium import st_folium
 import sys
 from pathlib import Path
-from streamlit_folium import st_folium
-import folium
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -12,112 +11,225 @@ from src.data_prep import load_data, BENGALURU_CENTER
 from src.reporter_score import submit_report, get_all_reports, init_reports
 
 st.set_page_config(page_title="Citizen Reports | TrafficPulse", layout="wide")
+st.markdown("<style>h1,h2,h3{font-weight:600;}.stMetric label{font-size:0.8rem;color:#666;}</style>",
+            unsafe_allow_html=True)
+
 st.title("Citizen Reports")
-st.caption("Submit and track public incident reports. 3 or more reports in the same area trigger auto-verification.")
-
 init_reports()
-
 df = load_data()
 
-# --- VIP Alert panel ---
+BENGALURU_AREAS = {
+    'Majestic / City Centre': (12.9767, 77.5713),
+    'Koramangala': (12.9352, 77.6245),
+    'Indiranagar': (12.9784, 77.6408),
+    'Whitefield': (12.9698, 77.7500),
+    'Electronic City': (12.8458, 77.6601),
+    'Hebbal': (13.0358, 77.5970),
+    'Rajajinagar': (12.9915, 77.5521),
+    'Marathahalli': (12.9591, 77.6972),
+    'Yeshwanthpur': (13.0258, 77.5461),
+    'Tumkur Road corridor': (13.0200, 77.5100),
+    'Bannerghatta Road corridor': (12.8875, 77.5946),
+    'Outer Ring Road': (12.9698, 77.7100),
+    'Silk Board junction': (12.9177, 77.6237),
+    'K R Puram': (13.0078, 77.6942),
+}
+
+# --- VIP Alert ---
 if df is not None and 'event_cause' in df.columns:
-    vip_events = df[df['event_cause'] == 'vip_movement']
-    if not vip_events.empty:
-        latest_vip = vip_events.sort_values('start_datetime', ascending=False).iloc[0]
-        corridor = str(latest_vip.get('corridor', 'City centre')).strip()
-        with st.container():
+    recent_vip = df[df['event_cause'] == 'vip_movement']
+    if not recent_vip.empty:
+        vip = recent_vip.sort_values('start_datetime', ascending=False).iloc[0]
+        corridor = str(vip.get('corridor', 'City corridor')).strip()
+        if corridor and corridor not in ('nan', ''):
             st.markdown(
-                f"""
-                <div style="background:#1a3a5c;color:white;padding:0.8rem 1rem;
-                            border-radius:6px;margin-bottom:1rem;">
-                    <b>VIP Movement Alert</b> &nbsp;&mdash;&nbsp;
-                    Corridor: {corridor} &nbsp;|&nbsp;
-                    Expect delays. Plan alternate routes.
-                </div>
-                """,
+                f"""<div style="background:#7f1d1d;color:white;padding:0.7rem 1rem;
+                border-radius:5px;margin-bottom:1rem;font-size:0.9rem;">
+                <b>Historical Example — VIP Movement</b> &nbsp;|&nbsp;
+                Corridor: {corridor} &nbsp;|&nbsp; Road closure required.
+                Plan alternate routes.
+                </div>""",
                 unsafe_allow_html=True,
             )
 
-# --- Report form ---
-left, right = st.columns([1, 1])
+# --- Tabs ---
+tab_citizen, tab_police = st.tabs(["Submit a Report", "Police View"])
 
-with left:
-    st.subheader("Submit a Report")
-    with st.form("report_form", clear_on_submit=True):
-        reporter_id = st.text_input("Your ID (optional)", placeholder="e.g. CIT1234")
-        cause = st.selectbox(
-            "Incident type",
-            options=[
-                'vehicle_breakdown', 'accident', 'pot_holes',
-                'water_logging', 'construction', 'tree_fall',
-                'procession', 'other',
-            ],
-            format_func=lambda x: x.replace('_', ' ').title(),
-        )
-        lat = st.number_input("Latitude", value=12.9716, format="%.4f")
-        lon = st.number_input("Longitude", value=77.5946, format="%.4f")
-        desc = st.text_area("Description (optional)", max_chars=200)
-        submitted = st.form_submit_button("Submit Report")
+# ===================== CITIZEN TAB =====================
+with tab_citizen:
+    st.caption("Report a traffic incident directly from the field. Verified by TrafficPulse when 3 or more reports arrive from the same area.")
 
-    if submitted:
-        rid = reporter_id.strip() or f"ANON_{len(get_all_reports()) + 1}"
-        idx = submit_report(rid, cause, lat, lon, desc)
-        reports = get_all_reports()
-        report = reports.iloc[idx]
-        if report.get('verified'):
-            st.success("Report submitted and auto-verified (3+ reports in this area).")
-        else:
-            st.success("Report submitted. Awaiting verification from nearby reports.")
+    left, right = st.columns([1, 1])
 
-with right:
-    st.subheader("Report Map")
-    m = folium.Map(location=BENGALURU_CENTER, zoom_start=11, tiles='CartoDB positron')
+    with left:
+        # GPS detection
+        if 'gps_active' not in st.session_state:
+            st.session_state['gps_active'] = False
+        if 'gps_area' not in st.session_state:
+            st.session_state['gps_area'] = None
 
+        gps_col, _ = st.columns([1, 2])
+        with gps_col:
+            if st.button("Detect My Location", use_container_width=True):
+                st.session_state['gps_active'] = True
+                st.session_state['gps_area'] = 'Majestic / City Centre'
+
+        if st.session_state['gps_active']:
+            st.success("Location detected. You can change it below if incorrect.")
+
+        with st.form("report_form", clear_on_submit=True):
+            reporter_id = st.text_input("Your name or ID (optional)")
+
+            cause = st.selectbox(
+                "What are you reporting?",
+                options=[
+                    'vehicle_breakdown', 'accident', 'pot_holes',
+                    'water_logging', 'construction', 'tree_fall',
+                    'procession', 'protest', 'congestion', 'other',
+                ],
+                format_func=lambda x: x.replace('_', ' ').title(),
+            )
+
+            default_area = st.session_state.get('gps_area') or 'Majestic / City Centre'
+            area_options = list(BENGALURU_AREAS.keys())
+            default_idx = area_options.index(default_area) if default_area in area_options else 0
+            area = st.selectbox("Area / location", options=area_options, index=default_idx)
+
+            desc = st.text_area("Describe the situation (optional)", max_chars=200,
+                                placeholder="e.g. Lorry broken down blocking two lanes, traffic backing up 500m")
+
+            submitted = st.form_submit_button("Submit Report", type="primary")
+
+        if submitted:
+            lat, lon = BENGALURU_AREAS[area]
+            rid = reporter_id.strip() or f"ANON_{len(get_all_reports()) + 1}"
+            idx = submit_report(rid, cause, lat, lon, desc)
+            reports = get_all_reports()
+            report = reports.iloc[idx]
+            if report.get('verified'):
+                st.success("Report submitted and auto-verified — 3 or more reports in this area confirmed the incident.")
+            else:
+                st.success("Report submitted. Pending verification.")
+            st.session_state['gps_active'] = False
+
+    with right:
+        st.markdown("**How it works**")
+        st.markdown("""
+        1. Tap **Detect My Location** or select your area
+        2. Choose the incident type and describe what you see
+        3. Submit — your report is sent to the TrafficPulse control room
+        4. When 3 or more reports arrive from the same area, the incident is **auto-verified** and officers are alerted
+        5. Verified reports earn **10 points** on the Reporter Leaderboard
+        """)
+
+        # Preview map of selected area
+        preview_area = list(BENGALURU_AREAS.keys())[0]
+        coords = BENGALURU_AREAS.get(preview_area, BENGALURU_CENTER)
+        pm = folium.Map(location=list(coords), zoom_start=13, tiles='CartoDB positron')
+        folium.Marker(
+            location=list(coords),
+            icon=folium.Icon(color='red', icon='info-sign'),
+            tooltip="Your selected area",
+        ).add_to(pm)
+        st.caption("Location preview")
+        st_folium(pm, width=None, height=240, returned_objects=[])
+
+
+# ===================== POLICE VIEW TAB =====================
+with tab_police:
     reports_df = get_all_reports()
-    if not reports_df.empty:
-        for _, row in reports_df.iterrows():
-            color = 'green' if row.get('verified') else 'gray'
-            folium.CircleMarker(
-                location=[row['lat'], row['lon']],
-                radius=7,
-                color=color,
-                fill=True,
-                fill_opacity=0.75,
-                popup=folium.Popup(
-                    f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
-                    f"{'Verified' if row.get('verified') else 'Pending'}",
-                    max_width=180,
-                ),
-            ).add_to(m)
+
+    if reports_df.empty:
+        pending_ct = 0
+        verified_ct = 0
     else:
+        verified_ct = int(reports_df['verified'].sum())
+        pending_ct = len(reports_df) - verified_ct
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Reports", len(reports_df) if not reports_df.empty else 0)
+    c2.metric("Verified", verified_ct)
+    c3.metric("Pending Verification", pending_ct)
+
+    st.markdown("---")
+
+    map_col, feed_col = st.columns([3, 2])
+
+    with map_col:
+        st.subheader("Report Map")
+        pm = folium.Map(location=BENGALURU_CENTER, zoom_start=11, tiles='CartoDB positron')
+
+        # Background: recent Astram events
         if df is not None:
-            sample = df.sample(min(30, len(df)), random_state=42)
+            sample = df.head(100)
             for _, row in sample.iterrows():
                 folium.CircleMarker(
                     location=[row['latitude'], row['longitude']],
-                    radius=4,
+                    radius=3,
                     color='#aaa',
                     fill=True,
-                    fill_opacity=0.5,
-                    tooltip="Historical incident",
-                ).add_to(m)
+                    fill_opacity=0.3,
+                    tooltip=f"Astram: {cause_label(str(row.get('event_cause', '')))}",
+                ).add_to(pm)
 
-    st_folium(m, width=None, height=360, returned_objects=[])
+        # Citizen reports
+        if not reports_df.empty:
+            for _, row in reports_df.iterrows():
+                color = '#27ae60' if row.get('verified') else '#e67e22'
+                folium.CircleMarker(
+                    location=[row['lat'], row['lon']],
+                    radius=10,
+                    color=color,
+                    fill=True,
+                    fill_opacity=0.85,
+                    popup=folium.Popup(
+                        f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
+                        f"By: {row['reporter_id']}<br>"
+                        f"Status: {'Verified' if row.get('verified') else 'Pending'}<br>"
+                        f"{row.get('description','') or ''}",
+                        max_width=220,
+                    ),
+                ).add_to(pm)
 
-# --- Live feed ---
-st.markdown("---")
-st.subheader("Report Feed")
+        st_folium(pm, width=None, height=420, returned_objects=[])
+        st.caption("Gray: historical Astram events   Green: verified citizen reports   Orange: pending reports")
 
-reports_df = get_all_reports()
-if not reports_df.empty:
-    display = reports_df.copy()
-    display['status'] = display['verified'].apply(lambda v: 'Verified' if v else 'Pending')
-    display['cause'] = display['cause'].apply(lambda x: x.replace('_', ' ').title())
-    st.dataframe(
-        display[['reporter_id', 'cause', 'lat', 'lon', 'status', 'points_awarded']],
-        use_container_width=True,
-        hide_index=True,
-    )
-else:
-    st.info("No reports submitted yet in this session. Submit one above to see the feed.")
-    st.caption("In a live deployment, this feed would show real-time incoming reports from the public.")
+    with feed_col:
+        st.subheader("Incoming Reports")
+
+        if reports_df.empty:
+            st.info("No reports submitted in this session.")
+            st.caption("Reports submitted via the Submit tab appear here in real time.")
+        else:
+            for i, row in reports_df.iterrows():
+                status_color = '#27ae60' if row.get('verified') else '#e67e22'
+                status_text = 'Verified' if row.get('verified') else 'Pending'
+                cause_text = str(row['cause']).replace('_', ' ').title()
+                desc_text = row.get('description', '') or ''
+
+                st.markdown(
+                    f"""<div style="border-left:4px solid {status_color};
+                    padding:0.5rem 0.8rem;margin-bottom:0.5rem;background:#f9f9f9;border-radius:3px;">
+                    <b>{cause_text}</b> &nbsp;
+                    <span style="background:{status_color};color:white;padding:1px 6px;
+                    border-radius:3px;font-size:0.75rem;">{status_text}</span><br>
+                    <span style="font-size:0.8rem;color:#555;">
+                    {row['reporter_id']} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}
+                    {(' — ' + desc_text[:60]) if desc_text else ''}
+                    </span>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+                a_col, d_col = st.columns(2)
+                with a_col:
+                    if st.button("Acknowledge", key=f"ack_{i}", use_container_width=True):
+                        st.toast(f"Report {i+1} acknowledged.")
+                with d_col:
+                    if st.button("Dispatch Officer", key=f"dis_{i}", use_container_width=True):
+                        st.toast(f"Officer dispatched to report {i+1}.")
+
+
+def cause_label(cause):
+    from src.data_prep import CAUSE_LABELS
+    return CAUSE_LABELS.get(cause, str(cause).replace('_', ' ').title())
