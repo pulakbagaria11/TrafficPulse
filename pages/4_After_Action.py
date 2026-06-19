@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data_prep import load_data, cause_label
 from src.severity_model import train_models
 from src.after_action import get_closed_events, response_time_stats, summary_by_cause, accuracy_by_cause, accuracy_by_month
+from src.severity_model import walk_forward_accuracy
 from src.corridor import get_monthly_trend
 
 st.set_page_config(page_title="After-Action | TrafficPulse", layout="wide")
@@ -204,6 +205,65 @@ if not month_acc.empty:
             st.info("Need 2+ held-out months to assess drift.")
 else:
     st.info("Not enough monthly data to assess accuracy drift.")
+
+st.markdown("---")
+
+# --- Walk-forward retraining simulation ---
+st.subheader("Walk-Forward Retraining Simulation")
+st.caption(
+    "What the panel above doesn't show: what if the model HAD been retrained continuously "
+    "instead of trained once and left fixed? This simulates that -- train on the first N days, "
+    "test on the next day, extend the training window by a day, retrain, test the day after that, "
+    "and so on through the full dataset. Each point is a freshly retrained model, not the same "
+    "fixed one re-evaluated."
+)
+
+wf1, wf2 = st.columns([3, 1])
+with wf2:
+    initial_days = st.slider("Initial training window (days)", 7, 30, 14)
+    step_days = st.select_slider("Retrain step", options=[1, 3, 7], value=1,
+                                  format_func=lambda x: f"{x} day" + ("s" if x > 1 else ""))
+
+walk_forward = walk_forward_accuracy(df, initial_days=initial_days, step_days=step_days)
+
+with wf1:
+    if not walk_forward.empty:
+        wf_display = walk_forward.copy()
+        wf_display['accuracy_pct'] = (wf_display['accuracy'] * 100).round(1)
+        wf_display['rolling_avg'] = wf_display['accuracy_pct'].rolling(7, min_periods=1).mean()
+
+        fig_wf = px.line(
+            wf_display, x='date', y='accuracy_pct',
+            labels={'date': 'Date', 'accuracy_pct': 'Accuracy (%)'},
+        )
+        fig_wf.update_traces(line_color='#bbb', name='Daily', showlegend=True)
+        fig_wf.add_scatter(
+            x=wf_display['date'], y=wf_display['rolling_avg'],
+            mode='lines', name='7-step rolling avg', line=dict(color='#1a3a5c', width=2),
+        )
+        fig_wf.update_layout(
+            margin=dict(l=0, r=0, t=10, b=0), height=280, yaxis_range=[0, 105],
+            legend=dict(orientation='h', y=1.1),
+        )
+        st.plotly_chart(fig_wf, use_container_width=True)
+    else:
+        st.info("Not enough data for a walk-forward simulation at this window size.")
+
+if not walk_forward.empty:
+    wf1b, wf2b, wf3b = st.columns(3)
+    retrained_mean = walk_forward['accuracy'].mean() * 100
+    wf1b.metric("Mean Accuracy (continuously retrained)", f"{retrained_mean:.1f}%")
+    fixed_mean = month_acc[month_acc['split'] == 'Test (held-out)']['accuracy_pct'].mean() if not month_acc.empty else None
+    if fixed_mean is not None:
+        wf2b.metric(
+            "Mean Accuracy (fixed model, held-out)", f"{fixed_mean:.1f}%",
+            f"{retrained_mean - fixed_mean:+.1f} pts (retrained vs. fixed)",
+        )
+    wf3b.metric("Retrain Steps Simulated", len(walk_forward))
+    st.caption(
+        "If the retrained line beats the fixed model, continuous retraining is paying for itself -- "
+        "exactly the post-event learning system the problem statement says is missing today."
+    )
 
 st.markdown("---")
 
