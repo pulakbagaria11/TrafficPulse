@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data_prep import load_data, cause_label
 from src.severity_model import train_models
-from src.after_action import get_closed_events, response_time_stats, summary_by_cause, accuracy_by_cause
+from src.after_action import get_closed_events, response_time_stats, summary_by_cause, accuracy_by_cause, accuracy_by_month
 from src.corridor import get_monthly_trend
 
 st.set_page_config(page_title="After-Action | TrafficPulse", layout="wide")
@@ -119,10 +119,10 @@ st.markdown("---")
 # --- Prediction accuracy ---
 st.subheader("Prediction Accuracy on Historical Events")
 closed = get_closed_events(filtered_df)
+models, encoders, feature_cols = train_models(df)
 
 if len(closed) > 10:
     with st.spinner("Computing accuracy..."):
-        models, encoders, feature_cols = train_models(df)
         acc_df = accuracy_by_cause(closed, models, encoders, feature_cols)
 
     if not acc_df.empty:
@@ -156,6 +156,54 @@ if len(closed) > 10:
         st.info("Not enough data for accuracy computation.")
 else:
     st.info("Prediction accuracy requires closed events. Filter changes may reduce the available sample.")
+
+st.markdown("---")
+
+# --- Post-event learning loop ---
+st.subheader("Post-Event Learning Loop")
+st.caption(
+    "The model above is trained once on Nov-Feb and never updated -- Nov-Feb accuracy below is "
+    "in-sample (the model has seen this data), Mar-Apr is genuinely held-out. This panel checks "
+    "whether held-out accuracy holds up over time, the signal a production system would use to "
+    "decide when a retrain is actually warranted, rather than retraining on a fixed schedule."
+)
+month_acc = accuracy_by_month(df, models, encoders, feature_cols)
+if not month_acc.empty:
+    lc1, lc2 = st.columns([2, 1])
+    with lc1:
+        fig_drift = px.line(
+            month_acc, x='month_name', y='accuracy_pct', markers=True,
+            labels={'month_name': 'Month', 'accuracy_pct': 'Accuracy (%)'},
+        )
+        fig_drift.update_traces(line_color='#1a3a5c')
+        fig_drift.update_layout(
+            margin=dict(l=0, r=0, t=10, b=0), height=200, yaxis_range=[0, 105],
+        )
+        st.plotly_chart(fig_drift, use_container_width=True)
+        st.dataframe(
+            month_acc[['month_name', 'accuracy_pct', 'split']].rename(
+                columns={'month_name': 'Month', 'accuracy_pct': 'Accuracy %', 'split': 'Evaluation Type'}
+            ),
+            use_container_width=True, hide_index=True,
+        )
+    with lc2:
+        held_out = month_acc[month_acc['split'] == 'Test (held-out)']
+        if len(held_out) >= 2:
+            first_acc = held_out.iloc[0]['accuracy_pct']
+            last_acc = held_out.iloc[-1]['accuracy_pct']
+            drift = last_acc - first_acc
+            st.metric(
+                f"Held-out drift ({held_out.iloc[0]['month_name']} -> {held_out.iloc[-1]['month_name']})",
+                f"{last_acc:.1f}%", f"{drift:+.1f} pts",
+            )
+            if drift < -5:
+                st.warning("Held-out accuracy is degrading -- a retrain on recent months is recommended.")
+            else:
+                st.success("Held-out accuracy is holding steady -- no retrain needed yet.")
+        else:
+            st.info("Need 2+ held-out months to assess drift.")
+else:
+    st.info("Not enough monthly data to assess accuracy drift.")
 
 st.markdown("---")
 

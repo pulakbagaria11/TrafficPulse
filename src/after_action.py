@@ -45,6 +45,7 @@ def accuracy_by_cause(df, models, encoders, feature_cols):
             )
             rows.append({
                 'event_cause': row.get('event_cause'),
+                'month': row.get('month'),
                 'actual_priority': int(row.get('priority_enc', 0)),
                 'predicted_priority_prob': preds.get('priority', 0),
                 'predicted_high': 1 if preds.get('priority', 0) >= 0.5 else 0,
@@ -58,6 +59,32 @@ def accuracy_by_cause(df, models, encoders, feature_cols):
         return pd.DataFrame()
 
     result = pd.DataFrame(rows)
+    return result
+
+
+def accuracy_by_month(df, models, encoders, feature_cols):
+    """Accuracy of the existing (fixed, trained-once) model evaluated
+    separately per month -- the simplest honest signal for whether
+    accuracy is drifting over time since training, i.e. whether a
+    periodic retrain is warranted."""
+    acc_df = accuracy_by_cause(df, models, encoders, feature_cols)
+    if acc_df.empty or 'month' not in acc_df.columns:
+        return pd.DataFrame()
+
+    month_names = {11: 'Nov', 12: 'Dec', 1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr'}
+    chrono_order = {11: 0, 12: 1, 1: 2, 2: 3, 3: 4, 4: 5}
+    result = (
+        acc_df.groupby('month')
+        .agg(accuracy=('correct', 'mean'), count=('correct', 'count'))
+        .reset_index()
+    )
+    result['sort_key'] = result['month'].map(chrono_order)
+    result = result.sort_values('sort_key').drop(columns='sort_key')
+    result['month_name'] = result['month'].map(month_names)
+    result['accuracy_pct'] = (result['accuracy'] * 100).round(1)
+    result['split'] = result['month'].apply(
+        lambda m: 'Train (in-sample)' if m in (11, 12, 1, 2) else 'Test (held-out)'
+    )
     return result
 
 
