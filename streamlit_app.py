@@ -159,6 +159,40 @@ with right_col:
         </div>
         """, unsafe_allow_html=True)
 
+# --- Problem statement alignment ---
+st.subheader("Problem Statement Alignment")
+st.caption('PS2 — "Event-Driven Congestion (Planned & Unplanned)" — mapped to what\'s implemented.')
+
+ps_rows = [
+    ("Forecast event impact in advance",
+     "Severity model (priority/closure probability) + Planned Event Mode, which scales the forecast by expected attendance for festivals, rallies, and sports events."),
+    ("Recommend optimal manpower",
+     "Personnel counts auto-scaled by severity tier and, for planned events, attendance."),
+    ("Recommend barricading",
+     "Barricade counts per incident, shown in both the Prediction tool and live Citizen Reports."),
+    ("Recommend diversion plans",
+     "Real Mappls-routed map: direct path through the congested corridor vs. the same trip diverted via the alternate, both ending at the same destination."),
+    ('"Resource deployment is experience-driven" (named gap)',
+     "Cascade Risk predictor, Emergency Corridor ETA (real hospital routing), and Flood-Prone flagging replace guesswork with computed, data-backed signals."),
+    ('"No post-event learning system" (named gap)',
+     "After-Action Report tracks the model's accuracy month-over-month, separates in-sample from held-out performance, and flags when a retrain is warranted."),
+    ("Historical and real-time data",
+     "Astram historical dataset + a Live Replay mode that streams it in timestamp order to simulate a live feed, plus live citizen reports and live Mappls ETA/routing."),
+    ("Planned & unplanned events",
+     "event_type field throughout, with Planned Event Mode specifically for the planned side (rallies, festivals, sports, construction)."),
+]
+
+ps_table_html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+for req, answer in ps_rows:
+    ps_table_html += f"""
+    <tr style="border-bottom:1px solid #e0e0e0;">
+        <td style="padding:8px 10px;width:32%;vertical-align:top;color:#1a3a5c;font-weight:600;">{req}</td>
+        <td style="padding:8px 10px;vertical-align:top;color:#444;">{answer}</td>
+    </tr>
+    """
+ps_table_html += "</table>"
+st.markdown(ps_table_html, unsafe_allow_html=True)
+
 st.markdown("---")
 
 # --- Roadmap / Prevention layer ---
