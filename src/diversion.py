@@ -45,32 +45,49 @@ def get_corridor_alternates(corridor):
     return ['ORR North 1', 'Hosur Road']
 
 
-def get_corridor_centroid(df, corridor_name):
-    """Mean lat/lon of a named corridor's historical incidents, or None."""
+def _corridor_matches(df, corridor_name):
     if not corridor_name or 'corridor' not in df.columns:
-        return None
+        return df.iloc[0:0]
     corridor_lower = str(corridor_name).lower()
     known = df[df['corridor'].notna()]
     mask = known['corridor'].str.lower().apply(
         lambda c: c in corridor_lower or corridor_lower in c
     )
-    matches = known[mask]
+    return known[mask]
+
+
+def get_corridor_centroid(df, corridor_name):
+    """Mean lat/lon of a named corridor's historical incidents, or None."""
+    matches = _corridor_matches(df, corridor_name)
     if matches.empty:
         return None
     return (matches['latitude'].mean(), matches['longitude'].mean())
 
 
+def get_corridor_far_point(df, corridor_name, from_lat, from_lon):
+    """The corridor incident point farthest from (from_lat, from_lon) --
+    a 'continue down this corridor past the jam' destination, instead of
+    the centroid (which can sit right next to the incident itself)."""
+    matches = _corridor_matches(df, corridor_name)
+    if matches.empty:
+        return None
+    dist2 = (matches['latitude'] - from_lat) ** 2 + (matches['longitude'] - from_lon) ** 2
+    far = matches.loc[dist2.idxmax()]
+    return (far['latitude'], far['longitude'])
+
+
 def make_route_map(df, incident_lat, incident_lon, corridor_name, alt_corridor_name):
-    """Folium map: red route through the congested corridor, green route via
-    the suggested alternate. Uses real Mappls road routing when available,
-    falls back to a straight dashed line if the API call fails."""
+    """Folium map showing two ways to reach the SAME destination (a point
+    further down the congested corridor): red is the direct route (which
+    runs through the jam), green is a route forced via the alternate
+    corridor. Uses real Mappls road routing when available, falls back to
+    a straight dashed line if the API call fails."""
     import folium
-    from src.data_prep import BENGALURU_CENTER
     from src import mappls_rest
 
     origin = (incident_lat, incident_lon)
-    congested_dest = get_corridor_centroid(df, corridor_name)
-    alt_dest = get_corridor_centroid(df, alt_corridor_name)
+    dest = get_corridor_far_point(df, corridor_name, incident_lat, incident_lon)
+    alt_via = get_corridor_centroid(df, alt_corridor_name)
 
     m = folium.Map(location=list(origin), zoom_start=12, tiles='CartoDB positron')
 
@@ -80,26 +97,27 @@ def make_route_map(df, incident_lat, incident_lon, corridor_name, alt_corridor_n
         tooltip='Incident location',
     ).add_to(m)
 
-    def _draw(dest, color, label):
+    def _draw(waypoint, color, label):
         if not dest:
             return
-        route = mappls_rest.get_route(origin, dest)
+        route = mappls_rest.get_route(origin, dest, waypoint=waypoint)
         if route:
             folium.PolyLine(route, color=color, weight=5, opacity=0.8, tooltip=label).add_to(m)
         else:
+            points = [origin] + ([waypoint] if waypoint else []) + [dest]
             folium.PolyLine(
-                [origin, dest], color=color, weight=4, opacity=0.6,
+                points, color=color, weight=4, opacity=0.6,
                 dash_array='8', tooltip=f"{label} (approximate)",
             ).add_to(m)
 
-    _draw(congested_dest, '#c0392b', f"Congested: {corridor_name}")
-    _draw(alt_dest, '#27ae60', f"Alternate: {alt_corridor_name}")
+    _draw(None, '#c0392b', f"Direct, via congested corridor: {corridor_name}")
+    _draw(alt_via, '#27ae60', f"Diverted via alternate: {alt_corridor_name}")
 
     legend_html = """
     <div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:white;
                 padding:10px 14px;border-radius:6px;border:1px solid #ccc;font-size:13px;">
-        <span style="color:#c0392b;">&#9473;&#9473;</span> Congested corridor<br>
-        <span style="color:#27ae60;">&#9473;&#9473;</span> Suggested alternate
+        <span style="color:#c0392b;">&#9473;&#9473;</span> Direct (via congested corridor)<br>
+        <span style="color:#27ae60;">&#9473;&#9473;</span> Diverted (via alternate)
     </div>
     """
     m.get_root().html.add_child(folium.Element(legend_html))

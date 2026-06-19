@@ -112,12 +112,16 @@ def distance_matrix(origin, dest):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_route(origin, dest):
-    """origin/dest are (lat, lon) tuples. Returns list of (lat, lon) or None."""
+def get_route(origin, dest, waypoint=None):
+    """origin/dest are (lat, lon) tuples. If waypoint is given, the route is
+    forced through it en route to dest -- used to show a detour via a named
+    alternate corridor while still arriving at the same destination as the
+    direct route. Returns list of (lat, lon) or None."""
     token = _get_token()
     if not token:
         return None
-    coords = f"{origin[1]:.6f},{origin[0]:.6f};{dest[1]:.6f},{dest[0]:.6f}"
+    points = [origin] + ([waypoint] if waypoint else []) + [dest]
+    coords = ";".join(f"{lon:.6f},{lat:.6f}" for lat, lon in points)
     try:
         resp = requests.get(
             ROUTE_URL_TMPL.format(token=token, coords=coords),
