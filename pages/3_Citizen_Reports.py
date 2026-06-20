@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+import html
 import random
 from streamlit_folium import st_folium
 import sys
@@ -226,9 +227,9 @@ with tab_police:
                 color = STATUS_COLORS.get(row.get('status', 'pending'), '#e67e22')
                 popup_html = (
                     f"<b>{str(row['cause']).replace('_',' ').title()}</b><br>"
-                    f"By: {row['reporter_id']}<br>"
+                    f"By: {html.escape(str(row['reporter_id']))}<br>"
                     f"Status: {row.get('status', 'pending').title()}<br>"
-                    f"{row.get('description','') or ''}"
+                    f"{html.escape(row.get('description','') or '')}"
                 )
                 if row['cause'] == 'pot_holes':
                     folium.Marker(
@@ -276,7 +277,8 @@ with tab_police:
                 status = row.get('status', 'pending')
                 status_color = STATUS_COLORS.get(status, '#e67e22')
                 cause_text = str(row['cause']).replace('_', ' ').title()
-                desc_text = row.get('description', '') or ''
+                desc_text = html.escape(row.get('description', '') or '')
+                reporter_text = html.escape(str(row['reporter_id']))
                 verified_badge = " &nbsp;<b style='color:#27ae60;'>Verified</b>" if row.get('verified') else ""
 
                 desc_suffix = f" — {desc_text[:60]}" if desc_text else ""
@@ -287,7 +289,7 @@ with tab_police:
                     f'<span style="background:{status_color};color:white;padding:1px 6px;'
                     f'border-radius:3px;font-size:0.75rem;">{status.title()}</span>{verified_badge}<br>'
                     f'<span style="font-size:0.8rem;color:#555;">'
-                    f"{row['reporter_id']} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}{desc_suffix}"
+                    f"{reporter_text} &nbsp;|&nbsp; {row['lat']:.3f}, {row['lon']:.3f}{desc_suffix}"
                     f'</span>'
                     f'</div>',
                     unsafe_allow_html=True,
