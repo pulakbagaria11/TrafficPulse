@@ -24,41 +24,42 @@ def response_time_stats(df):
 
 
 def accuracy_by_cause(df, models, encoders, feature_cols):
-    from src.severity_model import predict_event
+    """Vectorized over the whole closed-events frame -- a row-by-row
+    predict_event() loop here took 10s+ on ~3k events (rebuilding a
+    1-row DataFrame and calling predict_proba per row), making the
+    After-Action page stall on every load/filter change."""
+    from src.severity_model import CAT_COLS
 
     closed = get_closed_events(df)
-    if closed.empty or 'priority_enc' not in closed.columns:
+    if closed.empty or 'priority_enc' not in closed.columns or 'priority' not in models:
+        return pd.DataFrame()
+    closed = closed.dropna(subset=['priority_enc'])
+    if closed.empty:
         return pd.DataFrame()
 
-    rows = []
-    for _, row in closed.iterrows():
-        try:
-            preds = predict_event(
-                models, encoders, feature_cols,
-                event_cause=str(row.get('event_cause', 'unknown')),
-                event_type=str(row.get('event_type', 'unknown')),
-                lat=float(row.get('latitude', 12.97)),
-                lon=float(row.get('longitude', 77.59)),
-                hour=int(row.get('hour', 8)),
-                weekday=int(row.get('weekday', 0)),
-                month=int(row.get('month', 1)),
-            )
-            rows.append({
-                'event_cause': row.get('event_cause'),
-                'month': row.get('month'),
-                'actual_priority': int(row.get('priority_enc', 0)),
-                'predicted_priority_prob': preds.get('priority', 0),
-                'predicted_high': 1 if preds.get('priority', 0) >= 0.5 else 0,
-                'duration_mins': row.get('duration_mins'),
-                'correct': int(row.get('priority_enc', 0)) == (1 if preds.get('priority', 0) >= 0.5 else 0),
-            })
-        except Exception:
-            continue
+    feat = closed.copy()
+    for c in CAT_COLS:
+        if c in feat.columns and c in encoders:
+            le = encoders[c]
+            known = feat[c].fillna('unknown').astype(str)
+            mask = known.isin(le.classes_)
+            encoded = pd.Series(-1, index=feat.index)
+            encoded[mask] = le.transform(known[mask])
+            feat[c + '_enc'] = encoded
 
-    if not rows:
-        return pd.DataFrame()
+    X = feat.reindex(columns=feature_cols).fillna(-1)
+    probs = models['priority']['model'].predict_proba(X)[:, 1]
+    predicted_high = (probs >= 0.5).astype(int)
 
-    result = pd.DataFrame(rows)
+    result = pd.DataFrame({
+        'event_cause': closed['event_cause'].values if 'event_cause' in closed.columns else None,
+        'month': closed['month'].values if 'month' in closed.columns else None,
+        'actual_priority': closed['priority_enc'].astype(int).values,
+        'predicted_priority_prob': probs,
+        'predicted_high': predicted_high,
+        'duration_mins': closed['duration_mins'].values if 'duration_mins' in closed.columns else None,
+    })
+    result['correct'] = result['actual_priority'] == result['predicted_high']
     return result
 
 
