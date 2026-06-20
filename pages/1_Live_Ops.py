@@ -138,7 +138,7 @@ with map_col:
         cursor = st.session_state['replay_cursor']
         cumulative_count, recent_count = replay_counts(df, cursor, step_label)
 
-        rm1, rm2, rm3 = st.columns(3)
+        rm1, rm2, rm3 = st.columns([2, 1, 1])
         rm1.metric("Simulated Clock", cursor.strftime('%d %b %Y, %H:%M'))
         rm2.metric("Incidents Received", f"{cumulative_count:,}")
         rm3.metric(f"New ({step_label})", f"+{recent_count}")
