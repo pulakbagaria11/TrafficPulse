@@ -97,21 +97,33 @@ def make_route_map(df, incident_lat, incident_lon, corridor_name, alt_corridor_n
         tooltip='Incident location',
     ).add_to(m)
 
+    all_points = [origin]
+
     def _draw(waypoint, color, label):
         if not dest:
             return
         route = mappls_rest.get_route(origin, dest, waypoint=waypoint)
         if route:
             folium.PolyLine(route, color=color, weight=5, opacity=0.8, tooltip=label).add_to(m)
+            all_points.extend(route)
         else:
             points = [origin] + ([waypoint] if waypoint else []) + [dest]
             folium.PolyLine(
                 points, color=color, weight=4, opacity=0.6,
                 dash_array='8', tooltip=f"{label} (approximate)",
             ).add_to(m)
+            all_points.extend(points)
 
     _draw(None, '#c0392b', f"Direct, via congested corridor: {corridor_name}")
     _draw(alt_via, '#27ae60', f"Diverted via alternate: {alt_corridor_name}")
+
+    # zoom_start=12 above is just an initial value -- fit_bounds overrides it
+    # so the shared destination (which can be many km from the incident) is
+    # always in view instead of getting cropped off the edge of the map.
+    if len(all_points) > 1:
+        lats = [p[0] for p in all_points]
+        lons = [p[1] for p in all_points]
+        m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
 
     legend_html = """
     <div style="position:fixed;bottom:30px;left:30px;z-index:1000;background:white;
