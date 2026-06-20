@@ -99,23 +99,28 @@ def make_route_map(df, incident_lat, incident_lon, corridor_name, alt_corridor_n
 
     all_points = [origin]
 
-    def _draw(waypoint, color, label):
+    def _draw(waypoint, color, weight, label):
         if not dest:
             return
         route = mappls_rest.get_route(origin, dest, waypoint=waypoint)
         if route:
-            folium.PolyLine(route, color=color, weight=5, opacity=0.8, tooltip=label).add_to(m)
+            folium.PolyLine(route, color=color, weight=weight, opacity=1, tooltip=label).add_to(m)
             all_points.extend(route)
         else:
             points = [origin] + ([waypoint] if waypoint else []) + [dest]
             folium.PolyLine(
-                points, color=color, weight=4, opacity=0.6,
+                points, color=color, weight=max(weight - 1, 3), opacity=0.7,
                 dash_array='8', tooltip=f"{label} (approximate)",
             ).add_to(m)
             all_points.extend(points)
 
-    _draw(None, '#c0392b', f"Direct, via congested corridor: {corridor_name}")
-    _draw(alt_via, '#27ae60', f"Diverted via alternate: {alt_corridor_name}")
+    # Red drawn wider and underneath, green narrower and on top -- near the
+    # incident and the shared destination the two routes run along the same
+    # road, and equal-weight full-opacity lines there just blended into a
+    # single muddy color. The width difference keeps a red edge visible
+    # along any segment the routes share.
+    _draw(None, '#c0392b', 8, f"Direct, via congested corridor: {corridor_name}")
+    _draw(alt_via, '#27ae60', 4, f"Diverted via alternate: {alt_corridor_name}")
 
     # zoom_start=12 above is just an initial value -- fit_bounds overrides it
     # so the shared destination (which can be many km from the incident) is
