@@ -230,7 +230,7 @@ if run:
                 f"this diversion plan keeps off the road, not a guarantee."
             )
 
-            st.caption(f"Source: historical Astram data — {corridor_val.count()} incidents recorded on {top_corridor}.")
+            st.caption(f"Source: historical Astram data — {int((corridor_val == top_corridor).sum())} incidents recorded on {top_corridor}.")
 
             cascade_note = top_cascade_for_corridor(df, top_corridor)
             if cascade_note:

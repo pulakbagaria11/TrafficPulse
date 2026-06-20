@@ -6,11 +6,7 @@ def get_corridor_stats(df, top_n=20):
     if 'corridor' not in df.columns:
         return pd.DataFrame()
 
-    EXCLUDE = {'non-corridor', 'non corridor', 'na', 'n/a', 'none', ''}
-    d = df[
-        df['corridor'].notna() &
-        (~df['corridor'].str.strip().str.lower().isin(EXCLUDE))
-    ].copy()
+    d = df[df['corridor'].notna()].copy()
     if d.empty:
         return pd.DataFrame()
 

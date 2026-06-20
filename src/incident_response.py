@@ -17,8 +17,7 @@ def _nearest_corridor(df, lat, lon, radius_deg=0.02):
     ]
     if nearby.empty:
         return None
-    top = nearby['corridor'].value_counts().index[0]
-    return None if top.strip().lower() in ('non-corridor', 'non corridor') else top
+    return nearby['corridor'].value_counts().index[0]
 
 
 def recommend_for_location(df, cause, lat, lon):

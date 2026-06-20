@@ -104,6 +104,14 @@ def load_data(path=None):
             .str.replace(' ', '_')
         )
 
+    if 'corridor' in df.columns:
+        # "Non-corridor" is the Astram system's own placeholder for "not on a
+        # named corridor" (38% of all rows) -- treat it as missing so it
+        # never gets picked as a real road by diversion/route-map features.
+        NON_CORRIDOR = {'non-corridor', 'non corridor', 'na', 'n/a', 'none', ''}
+        is_placeholder = df['corridor'].astype(str).str.strip().str.lower().isin(NON_CORRIDOR)
+        df.loc[is_placeholder, 'corridor'] = None
+
     if 'start_datetime' in df.columns:
         dt = df['start_datetime']
         df['hour'] = dt.dt.hour
