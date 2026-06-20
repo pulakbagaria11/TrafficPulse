@@ -56,12 +56,20 @@ def _corridor_matches(df, corridor_name):
     return known[mask]
 
 
-def get_corridor_centroid(df, corridor_name):
-    """Mean lat/lon of a named corridor's historical incidents, or None."""
+def get_corridor_via_point(df, corridor_name, from_lat, from_lon, to_lat, to_lon):
+    """The alternate corridor's incident point that adds the least extra
+    distance to a from->to trip. Forcing the route through the corridor's
+    raw centroid instead could land off to one side, making the routing
+    engine detour up a dead-end spur and double back along the same road
+    to resume toward the destination -- this picks a point that's
+    actually roughly on the way instead."""
     matches = _corridor_matches(df, corridor_name)
     if matches.empty:
         return None
-    return (matches['latitude'].mean(), matches['longitude'].mean())
+    d_from = ((matches['latitude'] - from_lat) ** 2 + (matches['longitude'] - from_lon) ** 2) ** 0.5
+    d_to = ((matches['latitude'] - to_lat) ** 2 + (matches['longitude'] - to_lon) ** 2) ** 0.5
+    via = matches.loc[(d_from + d_to).idxmin()]
+    return (via['latitude'], via['longitude'])
 
 
 def get_corridor_far_point(df, corridor_name, from_lat, from_lon):
@@ -87,7 +95,10 @@ def make_route_map(df, incident_lat, incident_lon, corridor_name, alt_corridor_n
 
     origin = (incident_lat, incident_lon)
     dest = get_corridor_far_point(df, corridor_name, incident_lat, incident_lon)
-    alt_via = get_corridor_centroid(df, alt_corridor_name)
+    alt_via = (
+        get_corridor_via_point(df, alt_corridor_name, incident_lat, incident_lon, dest[0], dest[1])
+        if dest else None
+    )
 
     m = folium.Map(location=list(origin), zoom_start=12, tiles='CartoDB positron')
 
