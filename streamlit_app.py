@@ -131,12 +131,12 @@ st.subheader("Modules")
 left_col, right_col = st.columns(2)
 
 modules_left = [
-    ("Live Ops", "Real-time incident heatmap, corridor risk, tow truck pre-positioning"),
-    ("Prediction Tool", "Input any event — get severity probability and resource recommendation"),
+    ("Live Ops", "Real-time incident heatmap, Live Replay simulated feed, cascade risk, flood-prone roads, tow truck pre-positioning"),
+    ("Prediction Tool", "Input any event — get severity probability, resource recommendation, and a real routed diversion map"),
     ("Citizen Reports", "Public incident submission with auto-verification and police dispatch view"),
 ]
 modules_right = [
-    ("After-Action Report", "Predicted vs. actual outcomes; response time analytics and trend tracking"),
+    ("After-Action Report", "Predicted vs. actual outcomes, response time analytics, and a walk-forward retraining simulation"),
     ("Leaderboards", "Officer response scores and citizen reporter rankings"),
     ("Violation Hotspots", "Recurring incident locations flagged for escalation"),
 ]
